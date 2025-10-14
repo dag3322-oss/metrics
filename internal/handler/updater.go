@@ -27,7 +27,7 @@ func (h MetricUpdateHandler) Handle(res http.ResponseWriter, req *http.Request) 
 	var code = http.StatusOK
 
 	log.Printf("url=%s", strings.Trim(req.URL.Path, "/"))
-	var elements []string = strings.Split(strings.Trim(req.URL.Path, "/"), "/")
+	var elements = strings.Split(strings.Trim(req.URL.Path, "/"), "/")
 	if len(elements) == 4 {
 		if elements[2] == "" {
 			code = http.StatusNotFound

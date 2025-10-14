@@ -42,7 +42,7 @@ var hu MetricUpdateHandler = NewMetricUpdateHandler(repo)
 
 func TestUpdater(t *testing.T) {
 	var zeroStatus = 0
-	var w ResponseWriterMock = ResponseWriterMock{status: &zeroStatus}
+	var w = ResponseWriterMock{status: &zeroStatus}
 
 	TItem(t, "http://localhost:8080/update/", w, http.StatusNotFound, "path too short")
 	TItem(t, "http://localhost:8080/update/ololo/ololo/ololo", w, http.StatusBadRequest, "invalid metric type")
@@ -60,8 +60,8 @@ func TItem(t *testing.T, _url string, w ResponseWriterMock, status int, message 
 	assert.True(t, *w.status == status, message)
 }
 
-func BuildRequest(_url string) (*http.Request, error) {
+func BuildRequest(urlString string) (*http.Request, error) {
 	var err error
-	__url, err := url.Parse(_url)
-	return &http.Request{URL: __url}, err
+	urlRef, err := url.Parse(urlString)
+	return &http.Request{URL: urlRef}, err
 }
