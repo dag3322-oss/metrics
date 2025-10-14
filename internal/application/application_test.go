@@ -27,6 +27,7 @@ func TestServerAndAgent(t *testing.T) {
 	log.Printf("status=%d, len=%d, error=%+v", resp.StatusCode, resp.ContentLength, err)
 	if err == nil && resp != nil {
 		b, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
 		if err != nil {
 			log.Fatal(err)
 		}
