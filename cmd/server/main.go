@@ -16,12 +16,12 @@ func main() {
 	}
 	log.SetOutput(file)
 
-	var repo metrics.MemRepository = metrics.NewMemRepository()
+	var repo = metrics.NewMemRepository()
 
-	var hu updater.MetricUpdateHandler = updater.NewMetricUpdateHandler(repo)
+	var hu = updater.NewMetricUpdateHandler(repo)
 	http.HandleFunc(`/update/`, hu.Handle)
 
-	var hl updater.MetricListHandler = updater.NewMetricListHandler(repo)
+	var hl = updater.NewMetricListHandler(repo)
 	http.HandleFunc(`/list/`, hl.Handle)
 
 	err = http.ListenAndServe(`:8080`, nil)
