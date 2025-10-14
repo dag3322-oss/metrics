@@ -16,8 +16,12 @@ func (s MockRepository) UpdateMetric(name string, value any) error {
 	return nil
 }
 
-func (s MockRepository) GetMetrics() string {
+func (s MockRepository) GetAllAsString() string {
 	return ""
+}
+
+func (s MockRepository) GetAll() map[string]any {
+	return make(map[string]any)
 }
 
 type ResponseWriterMock struct {

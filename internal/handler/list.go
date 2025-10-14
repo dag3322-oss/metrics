@@ -23,6 +23,6 @@ func NewMetricListHandler(
 func (h MetricListHandler) Handle(res http.ResponseWriter, req *http.Request) {
 	res.WriteHeader(http.StatusOK)
 	res.Header().Add("Content-Type", "text/plain")
-	var s = h.repo.GetMetrics()
+	var s = h.repo.GetAllAsString()
 	res.Write([]byte(s))
 }

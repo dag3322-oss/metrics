@@ -39,11 +39,11 @@ func (s MemRepository) UpdateMetric(name string, value any) error {
 	default:
 		return fmt.Errorf("invalid metric type %s", reflect.TypeOf(value).Name())
 	}
-	log.Printf("metrics.size=%d", len(s.metrics))
+	log.Printf("metrics added %s,size=%d", name, len(s.metrics))
 	return nil
 }
 
-func (s MemRepository) GetMetrics() string {
+func (s MemRepository) GetAllAsString() string {
 	s.mx.Lock()
 	defer s.mx.Unlock()
 	result := ""
@@ -52,6 +52,16 @@ func (s MemRepository) GetMetrics() string {
 			result = result + "\n"
 		}
 		result = result + fmt.Sprintf("%s %+v", key, value)
+	}
+	return result
+}
+
+func (s MemRepository) GetAll() map[string]any {
+	s.mx.Lock()
+	defer s.mx.Unlock()
+	var result map[string]any = make(map[string]any, len(s.metrics))
+	for k, v := range s.metrics {
+		result[k] = v
 	}
 	return result
 }
