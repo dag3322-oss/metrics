@@ -27,12 +27,12 @@ func (s MemRepository) UpdateMetric(name string, value any) error {
 	if value == nil {
 		return errors.New("empty metric value")
 	}
-	switch value.(type) {
-	case float64:
+	switch reflect.ValueOf(value).Kind() {
+	case reflect.Float64:
 		s.metrics[name] = value
-	case uint64:
+	case reflect.Uint64:
 		s.metrics[name] = float64(value.(uint64))
-	case int64:
+	case reflect.Int64:
 		if s.metrics[name] == nil {
 			s.metrics[name] = value
 		} else {
@@ -61,7 +61,7 @@ func (s MemRepository) GetAllAsString() string {
 func (s MemRepository) GetAll() map[string]any {
 	s.mx.Lock()
 	defer s.mx.Unlock()
-	var result map[string]any = make(map[string]any, len(s.metrics))
+	var result = make(map[string]any, len(s.metrics))
 	for k, v := range s.metrics {
 		result[k] = v
 	}

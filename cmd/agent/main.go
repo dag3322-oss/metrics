@@ -153,9 +153,9 @@ func Send(repo repository.Repository, httpc http.Client) error {
 		default:
 			return fmt.Errorf("invalid metric type %s", reflect.TypeOf(v).Name())
 		}
-		var updateUrl = fmt.Sprintf("http://%s/update/%s/%s/%+v", "localhost:8080", metricType, k, v)
-		log.Printf("url=%s", updateUrl)
-		resp, err := httpc.Post(updateUrl, "text/plain", nil)
+		var updateURL = fmt.Sprintf("http://%s/update/%s/%s/%+v", "localhost:8080", metricType, k, v)
+		log.Printf("url=%s", updateURL)
+		resp, err := httpc.Post(updateURL, "text/plain", nil)
 		if err != nil {
 			return err
 		}
