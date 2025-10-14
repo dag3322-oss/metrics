@@ -30,6 +30,8 @@ func (s MemRepository) UpdateMetric(name string, value any) error {
 	switch value.(type) {
 	case float64:
 		s.metrics[name] = value
+	case uint64:
+		s.metrics[name] = float64(value.(uint64))
 	case int64:
 		if s.metrics[name] == nil {
 			s.metrics[name] = value
