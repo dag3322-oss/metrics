@@ -1,0 +1,57 @@
+package metrics
+
+import (
+	"errors"
+	"fmt"
+	"log"
+	"reflect"
+	"sync"
+)
+
+type MemRepository struct {
+	mx      *sync.Mutex
+	metrics map[string]any
+}
+
+func NewMemRepository() MemRepository {
+	return MemRepository{mx: &sync.Mutex{}, metrics: make(map[string]any)}
+}
+
+func (s MemRepository) UpdateMetric(name string, value any) error {
+	s.mx.Lock()
+	defer s.mx.Unlock()
+
+	if name == "" {
+		return errors.New("empty metric name")
+	}
+	if value == nil {
+		return errors.New("empty metric value")
+	}
+	switch value.(type) {
+	case float64:
+		s.metrics[name] = value
+	case int64:
+		if s.metrics[name] == nil {
+			s.metrics[name] = value
+		} else {
+			s.metrics[name] = s.metrics[name].(int64) + value.(int64)
+		}
+	default:
+		return fmt.Errorf("invalid metric type %s", reflect.TypeOf(value).Name())
+	}
+	log.Printf("metrics.size=%d", len(s.metrics))
+	return nil
+}
+
+func (s MemRepository) GetMetrics() string {
+	s.mx.Lock()
+	defer s.mx.Unlock()
+	result := ""
+	for key, value := range s.metrics {
+		if result != "" {
+			result = result + "\n"
+		}
+		result = result + fmt.Sprintf("%s %+v", key, value)
+	}
+	return result
+}
