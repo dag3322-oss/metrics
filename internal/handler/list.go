@@ -1,4 +1,4 @@
-package updater
+package handler
 
 import (
 	"net/http"

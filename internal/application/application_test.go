@@ -2,12 +2,12 @@ package application
 
 import (
 	"io"
-	"log"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rs/zerolog/log"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -23,16 +23,17 @@ func TestServerAndAgent(t *testing.T) {
 	var httpc = http.Client{Timeout: time.Duration(1) * time.Second}
 	var metrics = ""
 	resp, err := httpc.Get("http://localhost:8080/list")
-	log.SetOutput(os.Stdout)
 	log.Printf("status=%d, len=%d, error=%+v", resp.StatusCode, resp.ContentLength, err)
 	if err == nil && resp != nil {
 		b, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
-			log.Fatal(err)
+			log.Err(err)
 		}
 		metrics = string(b)
 		log.Printf("%s", metrics)
+	} else {
+		log.Err(err)
 	}
 
 	assert.True(t, len(strings.Split(metrics, "\n")) == 27)

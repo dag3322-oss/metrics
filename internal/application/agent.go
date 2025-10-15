@@ -2,7 +2,6 @@ package application
 
 import (
 	"fmt"
-	"log"
 	"math/rand"
 	"net/http"
 	"os"
@@ -13,18 +12,20 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rs/zerolog/log"
+
 	repository "github.com/dag3322-oss/metrics/internal/repository"
 )
 
 type Agent struct{}
 
 func (a Agent) Run() {
-	file, err := os.OpenFile("agent.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
-	if err != nil {
-		log.Fatal("Failed to open log file:", err)
-	}
-	log.SetOutput(file)
-
+	/* 	file, err := os.OpenFile("agent.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
+	   	if err != nil {
+	   		log.Fatal("Failed to open log file:", err)
+	   	}
+	   	log.SetOutput(file)
+	*/
 	var repo = repository.NewMemRepository()
 
 	Collect(time.Now(), repo)
@@ -138,7 +139,7 @@ func SendEvent(tick *time.Ticker, repo repository.Repository, httpc http.Client)
 	for range tick.C {
 		var err = Send(repo, httpc)
 		if err != nil {
-			log.Printf("send error=%s", err.Error())
+			log.Err(err)
 		}
 	}
 }

@@ -3,9 +3,10 @@ package metrics
 import (
 	"errors"
 	"fmt"
-	"log"
 	"reflect"
 	"sync"
+
+	"github.com/rs/zerolog/log"
 )
 
 type MemRepository struct {
@@ -66,4 +67,11 @@ func (s MemRepository) GetAll() map[string]any {
 		result[k] = v
 	}
 	return result
+}
+
+func (s MemRepository) Get(name string) (value any, exists bool) {
+	s.mx.Lock()
+	defer s.mx.Unlock()
+	value, exists = s.metrics[name]
+	return value, exists
 }
