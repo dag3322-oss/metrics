@@ -17,9 +17,25 @@ import (
 	repository "github.com/dag3322-oss/metrics/internal/repository"
 )
 
-type Agent struct{}
+type Agent struct {
+	host           string
+	reportInterval int64
+	pollInterval   int64
+}
 
-func (a Agent) Run() {
+func (a *Agent) SetHost(host string) {
+	a.host = host
+}
+
+func (a *Agent) SetReportInterval(reportInterval int64) {
+	a.reportInterval = reportInterval
+}
+
+func (a *Agent) SetPollInterval(pollInterval int64) {
+	a.pollInterval = pollInterval
+}
+
+func (a *Agent) Run() {
 	/* 	file, err := os.OpenFile("agent.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
 	   	if err != nil {
 	   		log.Fatal("Failed to open log file:", err)
@@ -29,19 +45,18 @@ func (a Agent) Run() {
 	var repo = repository.NewMemRepository()
 
 	Collect(time.Now(), repo)
-	var collectTimer = time.NewTicker(time.Second * 2)
+	var collectTimer = time.NewTicker(time.Second * time.Duration(a.pollInterval))
 	go CollectEvent(collectTimer, repo)
 
-	var httpc = http.Client{Timeout: time.Duration(1) * time.Second}
-	var sendTimer = time.NewTicker(time.Second * 10)
-	go SendEvent(sendTimer, repo, httpc)
+	var httpc = http.Client{Timeout: time.Second * time.Duration(30)}
+	var sendTimer = time.NewTicker(time.Second * time.Duration(a.reportInterval))
+	go SendEvent(sendTimer, repo, httpc, a.host)
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	<-sigs
 	collectTimer.Stop()
 	sendTimer.Stop()
-	//os.Exit(1)
 }
 
 func GetSamples() []metrics.Sample {
@@ -135,16 +150,16 @@ func Collect(t time.Time, repo repository.Repository) error {
 	return nil
 }
 
-func SendEvent(tick *time.Ticker, repo repository.Repository, httpc http.Client) {
+func SendEvent(tick *time.Ticker, repo repository.Repository, httpc http.Client, host string) {
 	for range tick.C {
-		var err = Send(repo, httpc)
+		var err = Send(repo, httpc, host)
 		if err != nil {
 			log.Err(err)
 		}
 	}
 }
 
-func Send(repo repository.Repository, httpc http.Client) error {
+func Send(repo repository.Repository, httpc http.Client, host string) error {
 	var metricType string
 	log.Printf("metrics=%s", repo.GetAllAsString())
 	for k, v := range repo.GetAll() {
@@ -156,7 +171,7 @@ func Send(repo repository.Repository, httpc http.Client) error {
 		default:
 			return fmt.Errorf("invalid metric type %s", reflect.TypeOf(v).Name())
 		}
-		var updateURL = fmt.Sprintf("http://%s/update/%s/%s/%+v", "localhost:8080", metricType, k, v)
+		var updateURL = fmt.Sprintf("http://%s/update/%s/%s/%+v", host, metricType, k, v)
 		log.Printf("url=%s", updateURL)
 		resp, err := httpc.Post(updateURL, "text/plain", nil)
 		if err != nil {

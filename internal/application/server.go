@@ -11,7 +11,13 @@ import (
 	chi_mdw "github.com/go-chi/chi/v5/middleware"
 )
 
-type Server struct{}
+type Server struct {
+	host string
+}
+
+func (s *Server) SetHost(host string) {
+	s.host = host
+}
 
 func (s Server) Run() {
 	/* 	file, err := os.OpenFile("server.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
@@ -36,7 +42,7 @@ func (s Server) Run() {
 	var hg = handlers.NewMetricGetHandler(repo)
 	r.HandleFunc(`/value/*`, hg.Handle)
 
-	var err = http.ListenAndServe(`:8080`, r)
+	var err = http.ListenAndServe(s.host, r)
 	if err != nil {
 		log.Err(err)
 	}
