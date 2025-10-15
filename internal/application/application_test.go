@@ -22,7 +22,7 @@ func TestServerAndAgent(t *testing.T) {
 	time.Sleep(time.Duration(15) * time.Second)
 	var httpc = http.Client{Timeout: time.Duration(1) * time.Second}
 	var metrics = ""
-	resp, err := httpc.Get("http://localhost:8080/list")
+	resp, err := httpc.Get("http://localhost:8080")
 	log.Printf("status=%d, len=%d, error=%+v", resp.StatusCode, resp.ContentLength, err)
 	if err == nil && resp != nil {
 		b, err := io.ReadAll(resp.Body)
