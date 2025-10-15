@@ -1,6 +1,6 @@
 module github.com/dag3322-oss/metrics
 
-go 1.25.1
+go 1.24.9
 
 require (
 	github.com/go-chi/chi/v5 v5.2.3
