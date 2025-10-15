@@ -31,7 +31,7 @@ func (s Server) Run() {
 	r.HandleFunc(`/update/*`, hu.Handle)
 
 	var hl = handlers.NewMetricListHandler(repo)
-	r.HandleFunc(`/*`, hl.Handle)
+	r.HandleFunc(`/`, hl.Handle)
 
 	var hg = handlers.NewMetricGetHandler(repo)
 	r.HandleFunc(`/value/*`, hg.Handle)
