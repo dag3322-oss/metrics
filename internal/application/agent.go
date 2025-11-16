@@ -203,7 +203,7 @@ func SendEvent(tick *time.Ticker, repo repository.Repository, httpc http.Client,
 	for range tick.C {
 		var err = Send(repo, httpc, host)
 		if err != nil {
-			log.Err(err)
+			log.Err(err).Msg("")
 		}
 	}
 }

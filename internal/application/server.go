@@ -8,10 +8,10 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"github.com/dag3322-oss/metrics/internal/handler"
 	handlers "github.com/dag3322-oss/metrics/internal/handler"
 	metrics "github.com/dag3322-oss/metrics/internal/repository"
 	chi "github.com/go-chi/chi/v5"
-	chi_mdw "github.com/go-chi/chi/v5/middleware"
 )
 
 type Server struct {
@@ -57,7 +57,7 @@ func (s Server) Run(cmdArgs []string) error {
 	var repo = metrics.NewMemRepository()
 
 	var r = chi.NewRouter()
-	r.Use(chi_mdw.Logger)
+	r.Use(handler.LoggerMiddleware())
 
 	var hu = handlers.NewMetricUpdateHandler(repo)
 	r.HandleFunc(`/update/*`, hu.Handle)
