@@ -13,18 +13,18 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestIntegration(t *testing.T) {
+func TestServerAndAgent(t *testing.T) {
 	var host = "localhost:8080"
 
 	var s = Server{}
 	s.SetHost(host)
-	go s.Run([]string{})
+	go s.Run()
 
 	var c = Agent{}
 	c.SetHost(host)
 	c.SetReportInterval(5)
 	c.SetPollInterval(2)
-	go c.Run([]string{})
+	go c.Run()
 
 	time.Sleep(time.Duration(10) * time.Second)
 	var httpc = http.Client{Timeout: time.Duration(1) * time.Second}
@@ -35,14 +35,13 @@ func TestIntegration(t *testing.T) {
 		b, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
-			log.Err(err).Msg("read response exception")
+			log.Err(err)
 		}
 		metrics = string(b)
 		log.Printf("%s", metrics)
 	} else {
-		log.Err(err).Msg("Get exception")
+		log.Err(err)
 	}
-	assert.NoError(t, err, "integration")
-	i := len(strings.Split(metrics, "\n"))
-	assert.True(t, i == 29, fmt.Sprintf("metrics collection size=%d", i))
+
+	assert.True(t, len(strings.Split(metrics, "\n")) == 27)
 }

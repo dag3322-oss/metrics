@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	metrics "github.com/dag3322-oss/metrics/internal/repository"
-	echo "github.com/labstack/echo/v4"
 )
 
 type MetricListHandler struct {
@@ -14,13 +13,16 @@ type MetricListHandler struct {
 func NewMetricListHandler(
 	repo metrics.Repository,
 ) MetricListHandler {
+	if repo == nil {
+		panic("empty repository")
+	}
+
 	return MetricListHandler{repo: repo}
 }
 
-func (h MetricListHandler) HandleMetricsList(c echo.Context) error {
-	c.Response().Header().Add("Content-Type", "text/plain")
+func (h MetricListHandler) Handle(res http.ResponseWriter, req *http.Request) {
+	res.WriteHeader(http.StatusOK)
+	res.Header().Add("Content-Type", "text/plain")
 	var s = h.repo.GetAllAsString()
-	c.Response().Write([]byte(s))
-	c.Response().WriteHeader(http.StatusOK)
-	return nil
+	res.Write([]byte(s))
 }

@@ -1,11 +1,8 @@
 package application
 
 import (
-	"bytes"
-	"flag"
 	"fmt"
 	"math/rand"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,10 +13,6 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
-
-	"encoding/json"
-
-	env "github.com/caarlos0/env/v11"
 
 	repository "github.com/dag3322-oss/metrics/internal/repository"
 )
@@ -42,72 +35,13 @@ func (a *Agent) SetPollInterval(pollInterval int64) {
 	a.pollInterval = pollInterval
 }
 
-type EnvParams struct {
-	Address        string `env:"ADDRESS"`
-	ReportInterval int64  `env:"REPORT_INTERVAL"`
-	PollInterval   int64  `env:"POLL_INTERVAL"`
-}
-
-func (a *Agent) setParams(cmdArgs []string) error {
-	var envParams EnvParams
-	var err = env.Parse(&envParams)
-	if err != nil {
-		return err
-	}
-
-	if cmdArgs == nil {
-		cmdArgs = os.Args[1:]
-		log.Printf("os.Args=%s", os.Args)
-	}
-	log.Printf("cmdArgs=%s", cmdArgs)
-	var flagSet = flag.NewFlagSet("server", flag.ExitOnError)
-	var flagHost = flagSet.String("a", "localhost:8080", "host:port")
-	var flagReportInterval = flagSet.Int64("r", 10, "send interval(seconds)")
-	var flagPollInterval = flagSet.Int64("p", 2, "poll interval(seconds)")
-	if len(cmdArgs) > 0 {
-		flagSet.Parse(cmdArgs) //on error will print descriptive error and exit
-	}
-	log.Printf("before assign s.host=%s,os.host=%s,flag.host=%s", a.host, os.Getenv("ADDRESS"), *flagHost)
-
-	if a.host == "" {
-		a.host = os.Getenv("ADDRESS")
-	}
-	if a.host == "" {
-		a.host = *flagHost
-	}
-	log.Printf("after assign host=%s", a.host)
-	_, _, err = net.SplitHostPort(a.host)
-	log.Printf("host=%s", a.host)
-	if err != nil {
-		return err
-	}
-
-	if a.reportInterval == 0 {
-		a.reportInterval = envParams.ReportInterval
-	}
-	if a.reportInterval == 0 {
-		a.reportInterval = *flagReportInterval
-	}
-	log.Printf("after assign reportInterval=%d", a.reportInterval)
-
-	if a.pollInterval == 0 {
-		a.pollInterval = envParams.PollInterval
-	}
-	if a.pollInterval == 0 {
-		a.pollInterval = *flagPollInterval
-	}
-	log.Printf("after assign pollInterval=%d", a.pollInterval)
-
-	return nil
-}
-
-func (a *Agent) Run(cmdArgs []string) error {
-	var err = a.setParams(cmdArgs)
-	if err != nil {
-		log.Err(err).Msg("setParams exception")
-		return err
-	}
-
+func (a *Agent) Run() {
+	/* 	file, err := os.OpenFile("agent.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
+	   	if err != nil {
+	   		log.Fatal("Failed to open log file:", err)
+	   	}
+	   	log.SetOutput(file)
+	*/
 	var repo = repository.NewMemRepository()
 
 	Collect(time.Now(), repo)
@@ -123,8 +57,6 @@ func (a *Agent) Run(cmdArgs []string) error {
 	<-sigs
 	collectTimer.Stop()
 	sendTimer.Stop()
-
-	return nil
 }
 
 func GetSamples() []metrics.Sample {
@@ -167,6 +99,22 @@ func CollectEvent(tick *time.Ticker, repo repository.Repository) {
 }
 
 func Collect(t time.Time, repo repository.Repository) error {
+	/* 	var desc string
+	   	for _, d := range metrics.All() {
+	   		desc = desc + "\n" + d.Name + " | " + d.Description
+	   	}
+	   	log.Printf("%s", desc)
+	   	var samples = GetSamples()
+	   	metrics.Read(samples)
+	   	for _, s := range samples {
+	   		if s.Value.Kind() == metrics.KindFloat64 {
+	   			var err = repo.UpdateMetric(s.Name, s.Value.Float64())
+	   			if err != nil {
+	   				return err
+	   			}
+	   		}
+	   	}
+	*/
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	repo.UpdateMetric("Alloc", m.Alloc)
@@ -206,60 +154,31 @@ func SendEvent(tick *time.Ticker, repo repository.Repository, httpc http.Client,
 	for range tick.C {
 		var err = Send(repo, httpc, host)
 		if err != nil {
-			log.Err(err).Msg("")
+			log.Err(err)
 		}
 	}
 }
 
 func Send(repo repository.Repository, httpc http.Client, host string) error {
-	var err error
-	//log.Printf("metrics=%s", repo.GetAllAsString())
-	var m repository.Metrics
+	var metricType string
+	log.Printf("metrics=%s", repo.GetAllAsString())
 	for k, v := range repo.GetAll() {
-		m.ID = k
-		switch vt := v.(type) {
+		switch v.(type) {
 		case float64:
-			m.MType = "gauge"
-			if f, ok := v.(float64); ok {
-				m.Value = &f
-			} else {
-				err = fmt.Errorf("any to float conversion error")
-				log.Err(err).Msg("")
-				return err
-			}
+			metricType = "gauge"
 		case int64:
-			m.MType = "counter"
-			if i, ok := v.(int64); ok {
-				m.Delta = &i
-			} else {
-				err = fmt.Errorf("any to int conversion error")
-				log.Err(err).Msg("")
-				return err
-			}
+			metricType = "counter"
 		default:
-			err = fmt.Errorf("invalid metric type %s", reflect.TypeOf(vt).Name())
-			log.Err(err).Msg("")
-			return err
+			return fmt.Errorf("invalid metric type %s", reflect.TypeOf(v).Name())
 		}
-		var b []byte
-		b, err = json.Marshal(m)
+		var updateURL = fmt.Sprintf("http://%s/update/%s/%s/%+v", host, metricType, k, v)
+		log.Printf("url=%s", updateURL)
+		resp, err := httpc.Post(updateURL, "text/plain", nil)
 		if err != nil {
-			log.Err(err).Msg("json marshal exception")
-			return err
-		}
-		resp, err := httpc.Post(
-			fmt.Sprintf("http://%s/update", host),
-			"application/json",
-			bytes.NewBuffer(b),
-		)
-		if err != nil {
-			log.Err(err).Msg("http post exception")
 			return err
 		}
 		if resp.StatusCode != http.StatusOK {
-			err = fmt.Errorf("HTTP status code = %d", resp.StatusCode)
-			log.Err(err).Msg("")
-			return err
+			return fmt.Errorf("HPPT status code = %d", resp.StatusCode)
 		}
 		defer resp.Body.Close()
 	}
