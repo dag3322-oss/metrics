@@ -18,7 +18,7 @@ func NewMetricListHandler(
 }
 
 func (h MetricListHandler) HandleMetricsList(c echo.Context) error {
-	c.Response().Header().Add("Content-Type", "text/html")
+	c.Response().Header().Set("Content-Type", "text/html")
 	var s = h.repo.GetAllAsString()
 	c.Response().Write([]byte(s))
 	c.Response().WriteHeader(http.StatusOK)

@@ -46,7 +46,7 @@ func (h MetricGetHandler) HandleMetricGetURL(c echo.Context) error {
 		var value, exists = h.repo.Get(name)
 		log.Printf("name=%s,value=%v,exists=%v", name, value, exists)
 		if exists {
-			c.Response().Header().Add("Content-Type", "text/html")
+			c.Response().Header().Set("Content-Type", "text/html")
 			c.Response().Write([]byte(fmt.Sprintf("%v", value)))
 		} else {
 			code = http.StatusNotFound
