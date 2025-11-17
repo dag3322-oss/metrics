@@ -35,13 +35,13 @@ func TestIntegration(t *testing.T) {
 		b, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
-			log.Err(err)
+			log.Err(err).Msg("read response exception")
 		}
 		metrics = string(b)
 		log.Printf("%s", metrics)
 	} else {
 		log.Err(err).Msg("Get exception")
 	}
-
+	assert.NoError(t, err, "integration")
 	assert.True(t, len(strings.Split(metrics, "\n")) == 27)
 }

@@ -1,6 +1,7 @@
 package application
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -15,6 +16,8 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+
+	"encoding/json"
 
 	env "github.com/caarlos0/env/v11"
 
@@ -209,25 +212,53 @@ func SendEvent(tick *time.Ticker, repo repository.Repository, httpc http.Client,
 }
 
 func Send(repo repository.Repository, httpc http.Client, host string) error {
-	var metricType string
+	var err error
 	log.Printf("metrics=%s", repo.GetAllAsString())
+	var m repository.Metrics
 	for k, v := range repo.GetAll() {
-		switch v.(type) {
+		m.ID = k
+		switch vt := v.(type) {
 		case float64:
-			metricType = "gauge"
+			m.MType = "gauge"
+			if f, ok := v.(float64); ok {
+				m.Value = &f
+			} else {
+				err = fmt.Errorf("any to float conversion error")
+				log.Err(err).Msg("")
+				return err
+			}
 		case int64:
-			metricType = "counter"
+			if i, ok := v.(int64); ok {
+				m.Delta = &i
+			} else {
+				err = fmt.Errorf("any to int conversion error")
+				log.Err(err).Msg("")
+				return err
+			}
 		default:
-			return fmt.Errorf("invalid metric type %s", reflect.TypeOf(v).Name())
+			err = fmt.Errorf("invalid metric type %s", reflect.TypeOf(vt).Name())
+			log.Err(err).Msg("")
+			return err
 		}
-		var updateURL = fmt.Sprintf("http://%s/update/%s/%s/%+v", host, metricType, k, v)
-		log.Printf("url=%s", updateURL)
-		resp, err := httpc.Post(updateURL, "text/plain", nil)
+		var b []byte
+		b, err = json.Marshal(m)
 		if err != nil {
+			log.Err(err).Msg("json marshal exception")
+			return err
+		}
+		resp, err := httpc.Post(
+			fmt.Sprintf("http://%s/update", host),
+			"application/json",
+			bytes.NewBuffer(b),
+		)
+		if err != nil {
+			log.Err(err).Msg("http post exception")
 			return err
 		}
 		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("HPPT status code = %d", resp.StatusCode)
+			err = fmt.Errorf("HTTP status code = %d", resp.StatusCode)
+			log.Err(err).Msg("")
+			return err
 		}
 		defer resp.Body.Close()
 	}

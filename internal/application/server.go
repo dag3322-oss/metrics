@@ -1,6 +1,7 @@
 package application
 
 import (
+	"errors"
 	"flag"
 	"net"
 	"net/http"
@@ -10,7 +11,8 @@ import (
 
 	handlers "github.com/dag3322-oss/metrics/internal/handler"
 	metrics "github.com/dag3322-oss/metrics/internal/repository"
-	chi "github.com/go-chi/chi/v5"
+	echo "github.com/labstack/echo/v4"
+	middleware "github.com/labstack/echo/v4/middleware"
 )
 
 type Server struct {
@@ -55,21 +57,42 @@ func (s Server) Run(cmdArgs []string) error {
 
 	var repo = metrics.NewMemRepository()
 
-	var r = chi.NewRouter()
-	r.Use(handlers.LoggerMiddleware())
+	e := echo.New()
 
-	var hu = handlers.NewMetricUpdateHandler(repo)
-	r.HandleFunc(`/update/*`, hu.Handle)
+	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
+		LogURI:          true,
+		LogMethod:       true,
+		LogLatency:      true,
+		LogStatus:       true,
+		LogResponseSize: true,
+		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
+			log.Info().
+				Str("url", v.URI).
+				Str("method", v.Method).
+				Int64("duration", v.Latency.Milliseconds()).
+				Int("status", v.Status).
+				Int64("response_size", v.ResponseSize).
+				Msg("request")
+			return nil
+		},
+	}))
 
-	var hl = handlers.NewMetricListHandler(repo)
-	r.HandleFunc(`/`, hl.Handle)
+	hu := handlers.NewMetricUpdateHandler(repo)
+	updates := e.Group("/update")
+	updates.GET("*", hu.HandleMetricUpdate)
+	updates.POST("*", hu.HandleMetricUpdateJson)
 
-	var hg = handlers.NewMetricGetHandler(repo)
-	r.HandleFunc(`/value/*`, hg.Handle)
+	hl := handlers.NewMetricListHandler(repo)
+	lists := e.Group("/")
+	lists.GET("*", hl.HandleMetricsList)
 
-	err = http.ListenAndServe(s.host, r)
-	if err != nil {
-		log.Err(err).Msg("ListenAndServe exception")
+	hg := handlers.NewMetricGetHandler(repo)
+	values := e.Group("/value")
+	values.GET("*", hg.HandleMetricGet)
+	values.POST("*", hg.HandleMetricGetJson)
+
+	if err := e.Start(s.host); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Err(err).Msg("failed to start server")
 	}
 	return err
 }
