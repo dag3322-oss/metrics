@@ -85,12 +85,12 @@ func (s Server) Run(cmdArgs []string) error {
 		},
 	}))
 
-	// не проверялось за отсутствием ответов в JSON и HTML
 	e.Use(middleware.GzipWithConfig(middleware.GzipConfig{
 		Skipper: func(c echo.Context) bool {
 			mediaType := handlers.GetMediaType(c.Request())
 			return !(mediaType == echo.MIMEApplicationJSON || mediaType == echo.MIMETextHTML)
 		},
+		MinLength: 1,
 	}))
 
 	hu := handlers.NewMetricUpdateHandler(repo)
