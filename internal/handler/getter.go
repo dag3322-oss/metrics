@@ -24,7 +24,7 @@ func (h MetricGetHandler) HandleMetricGet(c echo.Context) error {
 	switch mediaType {
 	case echo.MIMEApplicationJSON:
 		return h.HandleMetricGetJSON(c)
-	case echo.MIMETextPlain:
+	case echo.MIMETextPlain, "":
 		return h.HandleMetricGetURL(c)
 	default:
 		c.Response().WriteHeader(http.StatusUnsupportedMediaType)
