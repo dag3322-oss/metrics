@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+
+	"github.com/rs/zerolog/log"
 )
 
 type MemRepository struct {
@@ -42,7 +44,7 @@ func (s MemRepository) UpdateMetric(name string, value any) error {
 	default:
 		return fmt.Errorf("invalid metric type %s", reflect.TypeOf(value).Name())
 	}
-	//log.Printf("metrics added %s,size=%d", name, len(s.metrics))
+	log.Printf("metrics added %s,size=%d", name, len(s.metrics))
 	return nil
 }
 
