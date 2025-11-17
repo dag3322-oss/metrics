@@ -2,6 +2,7 @@ package application
 
 import (
 	"bytes"
+	"compress/gzip"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -22,6 +23,7 @@ import (
 	env "github.com/caarlos0/env/v11"
 
 	repository "github.com/dag3322-oss/metrics/internal/repository"
+	echo "github.com/labstack/echo/v4"
 )
 
 type Agent struct {
@@ -247,15 +249,33 @@ func Send(repo repository.Repository, httpc http.Client, host string) error {
 			log.Err(err).Msg("json marshal exception")
 			return err
 		}
-		resp, err := httpc.Post(
-			fmt.Sprintf("http://%s/update", host),
-			"application/json",
-			bytes.NewBuffer(b),
-		)
+
+		var buf bytes.Buffer
+		gzWriter := gzip.NewWriter(&buf)
+		_, err = gzWriter.Write(b)
 		if err != nil {
-			log.Err(err).Msg("http post exception")
+			log.Err(err).Msg("zip exception")
 			return err
 		}
+		gzWriter.Close()
+
+		req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/update", host), &buf)
+		if err != nil {
+			log.Err(err).Msg("request create exception")
+			return err
+		}
+		req.Header.Set(echo.HeaderContentEncoding, "gzip")
+		req.Header.Set("Accept-Encoding", "gzip")
+		req.Header.Add(echo.HeaderVary, echo.HeaderAcceptEncoding)
+		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Err(err).Msg("request send exception")
+			return err
+		}
+		defer resp.Body.Close()
+
 		if resp.StatusCode != http.StatusOK {
 			err = fmt.Errorf("HTTP status code = %d", resp.StatusCode)
 			log.Err(err).Msg("")

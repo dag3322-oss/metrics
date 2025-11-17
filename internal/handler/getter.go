@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	metrics "github.com/dag3322-oss/metrics/internal/repository"
@@ -60,10 +62,23 @@ func (h MetricGetHandler) HandleMetricGetJSON(c echo.Context) error {
 	var code = http.StatusOK
 	var name string
 	var err error
+	var b []byte
 
-	if err := c.Bind(&m); err != nil {
-		code = http.StatusBadRequest
-		log.Err(err).Msg("request json bind exception")
+	if code == http.StatusOK {
+		b, err = io.ReadAll(c.Request().Body)
+		if err != nil {
+			code = http.StatusBadRequest
+			log.Err(err).Msg("read request body")
+		}
+	}
+
+	if code == http.StatusOK {
+		err = json.Unmarshal(b, &m)
+		if err != nil {
+			code = http.StatusBadRequest
+			log.Err(err).Msg("json unmarshal exception")
+		}
+		log.Printf("body=%s", string(b))
 	}
 
 	if code == http.StatusOK {

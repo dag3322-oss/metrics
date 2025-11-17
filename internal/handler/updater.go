@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/rs/zerolog/log"
@@ -59,12 +61,32 @@ func (h MetricUpdateHandler) HandleMetricUpdateJSON(c echo.Context) error {
 	var name string
 	var value any
 	var err error
-
-	if err = c.Bind(&m); err != nil {
-		code = http.StatusBadRequest
-		log.Err(err).Msg("json unmarshall")
+	var b []byte
+	if code == http.StatusOK {
+		b, err = io.ReadAll(c.Request().Body)
+		if err != nil {
+			code = http.StatusBadRequest
+			log.Err(err).Msg("read request body")
+		}
 	}
 
+	if code == http.StatusOK {
+		err = json.Unmarshal(b, &m)
+		if err != nil {
+			code = http.StatusBadRequest
+			log.Err(err).Msg("json unmarshal exception")
+		}
+		log.Printf("body=%s", string(b))
+	}
+
+	// по непонятной причине Bind не работает с декомпрессированым телом запроса,
+	// причём декомпрессированным как в middleware так и вручную
+	// deflate ожидаемо не помог
+	/* 	if err = c.Bind(&m); err != nil {
+	   		code = http.StatusBadRequest
+	   		log.Err(err).Msg("json unmarshall")
+	   	}
+	*/
 	if code == http.StatusOK {
 		code, name, value, err = Validate("update", m)
 		if code != http.StatusOK {

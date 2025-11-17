@@ -3,6 +3,7 @@ package application
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -59,6 +60,8 @@ func (s Server) Run(cmdArgs []string) error {
 
 	e := echo.New()
 
+	e.Use(middleware.Decompress())
+
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
 		LogURI:          true,
 		LogMethod:       true,
@@ -75,8 +78,18 @@ func (s Server) Run(cmdArgs []string) error {
 				Int64("response_size", v.ResponseSize).
 				Strs("content_type", v.Headers["Content-Type"]).
 				Strs("content_length", v.Headers["Content-Length"]).
+				Strs("content_encoding", v.Headers[echo.HeaderContentEncoding]).
+				Str("headers", fmt.Sprintf("%v", v.Headers)).
 				Msg("request")
 			return nil
+		},
+	}))
+
+	// не проверялось за отсутствием ответов в JSON и HTML
+	e.Use(middleware.GzipWithConfig(middleware.GzipConfig{
+		Skipper: func(c echo.Context) bool {
+			mediaType := handlers.GetMediaType(c.Request())
+			return !(mediaType == echo.MIMEApplicationJSON || mediaType == echo.MIMETextHTML)
 		},
 	}))
 
