@@ -43,5 +43,6 @@ func TestIntegration(t *testing.T) {
 		log.Err(err).Msg("Get exception")
 	}
 	assert.NoError(t, err, "integration")
-	assert.True(t, len(strings.Split(metrics, "\n")) == 27)
+	i := len(strings.Split(metrics, "\n"))
+	assert.True(t, i == 29, fmt.Sprintf("metrics collection size=%d", i))
 }

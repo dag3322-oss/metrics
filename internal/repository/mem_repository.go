@@ -31,6 +31,8 @@ func (s MemRepository) UpdateMetric(name string, value any) error {
 		s.metrics[name] = value
 	case reflect.Uint64:
 		s.metrics[name] = float64(value.(uint64))
+	case reflect.Uint32:
+		s.metrics[name] = float64(value.(uint32))
 	case reflect.Int64:
 		if s.metrics[name] == nil {
 			s.metrics[name] = value
