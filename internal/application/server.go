@@ -85,12 +85,13 @@ func (s Server) Run(cmdArgs []string) error {
 		},
 	}))
 
-	e.Use(middleware.GzipWithConfig(middleware.GzipConfig{
+	e.Use(handlers.GzipWithConfig(handlers.GzipConfig{
 		Skipper: func(c echo.Context) bool {
-			mediaType := handlers.GetMediaType(c.Request())
-			return !(mediaType == echo.MIMEApplicationJSON || mediaType == echo.MIMETextHTML)
+			/* mediaType := handlers.GetMediaType(c.Request())
+			return !(mediaType == echo.MIMEApplicationJSON || mediaType == echo.MIMETextHTML) */
+			return false
 		},
-		MinLength: 1,
+		MinLength: 10,
 	}))
 
 	hu := handlers.NewMetricUpdateHandler(repo)
