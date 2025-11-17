@@ -20,6 +20,19 @@ func NewMetricGetHandler(
 }
 
 func (h MetricGetHandler) HandleMetricGet(c echo.Context) error {
+	mediaType := GetMediaType(c.Request())
+	switch mediaType {
+	case echo.MIMEApplicationJSON:
+		return h.HandleMetricGetJSON(c)
+	case echo.MIMETextPlain:
+		return h.HandleMetricGetURL(c)
+	default:
+		c.Response().WriteHeader(http.StatusUnsupportedMediaType)
+		return fmt.Errorf("unsupported media type:%s", mediaType)
+	}
+}
+
+func (h MetricGetHandler) HandleMetricGetURL(c echo.Context) error {
 	code, name, _, err := ParseURL(*c.Request().URL)
 
 	if err != nil {

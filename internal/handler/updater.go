@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 
 	"github.com/rs/zerolog/log"
@@ -24,6 +25,19 @@ func NewMetricUpdateHandler(
 }
 
 func (h MetricUpdateHandler) HandleMetricUpdate(c echo.Context) error {
+	mediaType := GetMediaType(c.Request())
+	switch mediaType {
+	case echo.MIMEApplicationJSON:
+		return h.HandleMetricUpdateJSON(c)
+	case echo.MIMETextPlain:
+		return h.HandleMetricUpdateURL(c)
+	default:
+		c.Response().WriteHeader(http.StatusUnsupportedMediaType)
+		return fmt.Errorf("unsupported media type:%s", mediaType)
+	}
+}
+
+func (h MetricUpdateHandler) HandleMetricUpdateURL(c echo.Context) error {
 	code, name, value, err := ParseURL(*c.Request().URL)
 
 	if code == http.StatusOK {
@@ -48,7 +62,7 @@ func (h MetricUpdateHandler) HandleMetricUpdateJSON(c echo.Context) error {
 
 	if err = c.Bind(&m); err != nil {
 		code = http.StatusBadRequest
-		log.Err(err).Msg("xml unmarshall")
+		log.Err(err).Msg("json unmarshall")
 	}
 
 	if code == http.StatusOK {

@@ -82,8 +82,8 @@ func (s Server) Run(cmdArgs []string) error {
 
 	hu := handlers.NewMetricUpdateHandler(repo)
 	updates := e.Group("/update")
-	updates.GET("*", hu.HandleMetricUpdate)
-	updates.POST("*", hu.HandleMetricUpdateJSON)
+	updates.GET("*", hu.HandleMetricUpdateURL)
+	updates.POST("*", hu.HandleMetricUpdate)
 
 	hl := handlers.NewMetricListHandler(repo)
 	lists := e.Group("/")
@@ -91,8 +91,8 @@ func (s Server) Run(cmdArgs []string) error {
 
 	hg := handlers.NewMetricGetHandler(repo)
 	values := e.Group("/value")
-	values.GET("*", hg.HandleMetricGet)
-	values.POST("*", hg.HandleMetricGetJSON)
+	values.GET("*", hg.HandleMetricGetURL)
+	values.POST("*", hg.HandleMetricGet)
 
 	if err := e.Start(s.host); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Err(err).Msg("failed to start server")
