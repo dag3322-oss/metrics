@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	metrics "github.com/dag3322-oss/metrics/internal/repository"
 	"github.com/rs/zerolog/log"
 )
 
@@ -45,6 +46,37 @@ func ParseURL(u url.URL) (resultCode int, name string, value any, err error) {
 		}
 	} else {
 		resultCode = http.StatusNotFound
+	}
+	return resultCode, name, value, err
+}
+
+func Validate(action string, m metrics.Metrics) (resultCode int, name string, value any, err error) {
+	log.Printf("model=%+v", m)
+	resultCode = http.StatusOK
+	name = m.ID
+	if name == "" {
+		resultCode = http.StatusNotFound
+	} else {
+		switch m.MType {
+		case "gauge":
+			if action == "update" {
+				if m.Value == nil {
+					resultCode = http.StatusBadRequest
+				} else {
+					value = *m.Value
+				}
+			}
+		case "counter":
+			if action == "update" {
+				if m.Delta == nil {
+					resultCode = http.StatusBadRequest
+				} else {
+					value = *m.Delta
+				}
+			}
+		default:
+			resultCode = http.StatusBadRequest
+		}
 	}
 	return resultCode, name, value, err
 }

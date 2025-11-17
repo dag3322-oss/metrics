@@ -1,14 +1,18 @@
 package application
 
 import (
+	"errors"
+	"flag"
+	"net"
 	"net/http"
+	"os"
 
 	"github.com/rs/zerolog/log"
 
 	handlers "github.com/dag3322-oss/metrics/internal/handler"
 	metrics "github.com/dag3322-oss/metrics/internal/repository"
-	chi "github.com/go-chi/chi/v5"
-	chi_mdw "github.com/go-chi/chi/v5/middleware"
+	echo "github.com/labstack/echo/v4"
+	middleware "github.com/labstack/echo/v4/middleware"
 )
 
 type Server struct {
@@ -19,31 +23,79 @@ func (s *Server) SetHost(host string) {
 	s.host = host
 }
 
-func (s Server) Run() {
-	/* 	file, err := os.OpenFile("server.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
-	   	if err != nil {
-	   		log.Fatal("Failed to open log file:", err)
-	   	}
-	   	log.SetOutput(file)
+func (s *Server) setParams(cmdArgs []string) error {
+	if cmdArgs == nil {
+		cmdArgs = os.Args[1:]
+		log.Printf("os.Args=%s", os.Args)
+	}
+	log.Printf("cmdArgs=%s", cmdArgs)
+	var flagSet = flag.NewFlagSet("server", flag.ExitOnError)
+	var flagHost = flagSet.String("a", "localhost:8080", "host:port")
+	if len(cmdArgs) > 0 {
+		flagSet.Parse(cmdArgs) //on error will print descriptive error and exit
+	}
+	log.Printf("before assign s.host=%s,os.host=%s,flag.host=%s", s.host, os.Getenv("ADDRESS"), *flagHost)
 
-	*/
+	if s.host == "" {
+		s.host = os.Getenv("ADDRESS")
+	}
+	if s.host == "" {
+		s.host = *flagHost
+	}
+	log.Printf("after assign s.host=%s", s.host)
+	_, _, err := net.SplitHostPort(s.host)
+	log.Printf("host=%s", s.host)
+	return err
+}
+
+func (s Server) Run(cmdArgs []string) error {
+	var err = s.setParams(cmdArgs)
+	if err != nil {
+		log.Err(err).Msg("setParams exception")
+		return err
+	}
 
 	var repo = metrics.NewMemRepository()
 
-	var r = chi.NewRouter()
-	r.Use(chi_mdw.Logger)
+	e := echo.New()
 
-	var hu = handlers.NewMetricUpdateHandler(repo)
-	r.HandleFunc(`/update/*`, hu.Handle)
+	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
+		LogURI:          true,
+		LogMethod:       true,
+		LogLatency:      true,
+		LogStatus:       true,
+		LogResponseSize: true,
+		LogHeaders:      []string{"Content-Type", "Content-Length"},
+		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
+			log.Info().
+				Str("url", v.URI).
+				Str("method", v.Method).
+				Int64("duration", v.Latency.Milliseconds()).
+				Int("status", v.Status).
+				Int64("response_size", v.ResponseSize).
+				Strs("content_type", v.Headers["Content-Type"]).
+				Strs("content_length", v.Headers["Content-Length"]).
+				Msg("request")
+			return nil
+		},
+	}))
 
-	var hl = handlers.NewMetricListHandler(repo)
-	r.HandleFunc(`/`, hl.Handle)
+	hu := handlers.NewMetricUpdateHandler(repo)
+	updates := e.Group("/update")
+	updates.GET("*", hu.HandleMetricUpdateURL)
+	updates.POST("*", hu.HandleMetricUpdate)
 
-	var hg = handlers.NewMetricGetHandler(repo)
-	r.HandleFunc(`/value/*`, hg.Handle)
+	hl := handlers.NewMetricListHandler(repo)
+	lists := e.Group("/")
+	lists.GET("*", hl.HandleMetricsList)
 
-	var err = http.ListenAndServe(s.host, r)
-	if err != nil {
-		log.Err(err)
+	hg := handlers.NewMetricGetHandler(repo)
+	values := e.Group("/value")
+	values.GET("*", hg.HandleMetricGetURL)
+	values.POST("*", hg.HandleMetricGet)
+
+	if err := e.Start(s.host); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Err(err).Msg("failed to start server")
 	}
+	return err
 }
