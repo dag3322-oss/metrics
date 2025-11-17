@@ -213,7 +213,7 @@ func SendEvent(tick *time.Ticker, repo repository.Repository, httpc http.Client,
 
 func Send(repo repository.Repository, httpc http.Client, host string) error {
 	var err error
-	log.Printf("metrics=%s", repo.GetAllAsString())
+	//log.Printf("metrics=%s", repo.GetAllAsString())
 	var m repository.Metrics
 	for k, v := range repo.GetAll() {
 		m.ID = k
@@ -228,6 +228,7 @@ func Send(repo repository.Repository, httpc http.Client, host string) error {
 				return err
 			}
 		case int64:
+			m.MType = "counter"
 			if i, ok := v.(int64); ok {
 				m.Delta = &i
 			} else {
