@@ -75,7 +75,7 @@ func BuildRequest(urlString string) (*http.Request, error) {
 }
 
 func JItem(t *testing.T, h echo.HandlerFunc, _url string, _json string, w ResponseWriterMock, status int, message string) {
-	request, err := BuildJsonRequest(_url, _json)
+	request, err := BuildJSONRequest(_url, _json)
 	assert.NoError(t, err, "BuildJsonRequest")
 	require.True(t, err == nil, "Error build request")
 	c := echo.New().NewContext(request, w)
@@ -83,7 +83,7 @@ func JItem(t *testing.T, h echo.HandlerFunc, _url string, _json string, w Respon
 	assert.True(t, *w.status == status, fmt.Sprintf("%s,status=%v", message, *w.status))
 }
 
-func BuildJsonRequest(urlString string, _json string) (*http.Request, error) {
+func BuildJSONRequest(urlString string, _json string) (*http.Request, error) {
 	var err error
 	urlRef, err := url.Parse(urlString)
 	if err != nil {

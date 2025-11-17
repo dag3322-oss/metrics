@@ -42,7 +42,7 @@ func (h MetricGetHandler) HandleMetricGet(c echo.Context) error {
 	return err
 }
 
-func (h MetricGetHandler) HandleMetricGetJson(c echo.Context) error {
+func (h MetricGetHandler) HandleMetricGetJSON(c echo.Context) error {
 	var m metrics.Metrics
 	var code = http.StatusOK
 	var name string

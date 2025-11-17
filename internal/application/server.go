@@ -65,6 +65,7 @@ func (s Server) Run(cmdArgs []string) error {
 		LogLatency:      true,
 		LogStatus:       true,
 		LogResponseSize: true,
+		LogHeaders:      []string{"Content-Type", "Content-Length"},
 		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
 			log.Info().
 				Str("url", v.URI).
@@ -72,6 +73,8 @@ func (s Server) Run(cmdArgs []string) error {
 				Int64("duration", v.Latency.Milliseconds()).
 				Int("status", v.Status).
 				Int64("response_size", v.ResponseSize).
+				Strs("content_type", v.Headers["Content-Type"]).
+				Strs("content_length", v.Headers["Content-Length"]).
 				Msg("request")
 			return nil
 		},
@@ -80,7 +83,7 @@ func (s Server) Run(cmdArgs []string) error {
 	hu := handlers.NewMetricUpdateHandler(repo)
 	updates := e.Group("/update")
 	updates.GET("*", hu.HandleMetricUpdate)
-	updates.POST("*", hu.HandleMetricUpdateJson)
+	updates.POST("*", hu.HandleMetricUpdateJSON)
 
 	hl := handlers.NewMetricListHandler(repo)
 	lists := e.Group("/")
@@ -89,7 +92,7 @@ func (s Server) Run(cmdArgs []string) error {
 	hg := handlers.NewMetricGetHandler(repo)
 	values := e.Group("/value")
 	values.GET("*", hg.HandleMetricGet)
-	values.POST("*", hg.HandleMetricGetJson)
+	values.POST("*", hg.HandleMetricGetJSON)
 
 	if err := e.Start(s.host); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Err(err).Msg("failed to start server")
