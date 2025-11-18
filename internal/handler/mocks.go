@@ -44,6 +44,10 @@ func (s MockRepository) Get(name string) (value any, exists bool) {
 	}
 }
 
+func (s MockRepository) SaveAll(m map[string]any) error {
+	return nil
+}
+
 type ResponseWriterMock struct {
 	status *int
 }

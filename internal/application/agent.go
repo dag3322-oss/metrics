@@ -10,9 +10,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"reflect"
 	"runtime"
 	"runtime/metrics"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -20,43 +20,19 @@ import (
 
 	"encoding/json"
 
-	env "github.com/caarlos0/env/v11"
-
+	models "github.com/dag3322-oss/metrics/internal/model"
 	repository "github.com/dag3322-oss/metrics/internal/repository"
 	echo "github.com/labstack/echo/v4"
 )
 
 type Agent struct {
-	host           string
-	reportInterval int64
-	pollInterval   int64
-}
-
-func (a *Agent) SetHost(host string) {
-	a.host = host
-}
-
-func (a *Agent) SetReportInterval(reportInterval int64) {
-	a.reportInterval = reportInterval
-}
-
-func (a *Agent) SetPollInterval(pollInterval int64) {
-	a.pollInterval = pollInterval
-}
-
-type EnvParams struct {
-	Address        string `env:"ADDRESS"`
-	ReportInterval int64  `env:"REPORT_INTERVAL"`
-	PollInterval   int64  `env:"POLL_INTERVAL"`
+	Host           string
+	ReportInterval *int64
+	PollInterval   *int64
 }
 
 func (a *Agent) setParams(cmdArgs []string) error {
-	var envParams EnvParams
-	var err = env.Parse(&envParams)
-	if err != nil {
-		return err
-	}
-
+	var err error
 	if cmdArgs == nil {
 		cmdArgs = os.Args[1:]
 		log.Printf("os.Args=%s", os.Args)
@@ -69,36 +45,43 @@ func (a *Agent) setParams(cmdArgs []string) error {
 	if len(cmdArgs) > 0 {
 		flagSet.Parse(cmdArgs) //on error will print descriptive error and exit
 	}
-	log.Printf("before assign s.host=%s,os.host=%s,flag.host=%s", a.host, os.Getenv("ADDRESS"), *flagHost)
+	log.Printf("before assign s.host=%s,os.host=%s,flag.host=%s", a.Host, os.Getenv("ADDRESS"), *flagHost)
 
-	if a.host == "" {
-		a.host = os.Getenv("ADDRESS")
-	}
-	if a.host == "" {
-		a.host = *flagHost
-	}
-	log.Printf("after assign host=%s", a.host)
-	_, _, err = net.SplitHostPort(a.host)
-	log.Printf("host=%s", a.host)
+	a.Host = NotEmpty(a.Host, os.Getenv("ADDRESS"), *flagHost)
+	log.Printf("after assign s.host=%s", a.Host)
+	_, _, err = net.SplitHostPort(a.Host)
 	if err != nil {
 		return err
 	}
+	log.Printf("host=%s", a.Host)
 
-	if a.reportInterval == 0 {
-		a.reportInterval = envParams.ReportInterval
+	if a.ReportInterval == nil {
+		se, exists := os.LookupEnv("REPORT_INTERVAL")
+		if exists {
+			i, err := strconv.ParseInt(se, 10, 8)
+			if err != nil {
+				return err
+			}
+			a.ReportInterval = &i
+		} else {
+			a.ReportInterval = flagReportInterval
+		}
 	}
-	if a.reportInterval == 0 {
-		a.reportInterval = *flagReportInterval
-	}
-	log.Printf("after assign reportInterval=%d", a.reportInterval)
+	log.Printf("after assign reportInterval=%d", a.ReportInterval)
 
-	if a.pollInterval == 0 {
-		a.pollInterval = envParams.PollInterval
+	if a.PollInterval == nil {
+		se, exists := os.LookupEnv("POLL_INTERVAL")
+		if exists {
+			i, err := strconv.ParseInt(se, 10, 8)
+			if err != nil {
+				return err
+			}
+			a.PollInterval = &i
+		} else {
+			a.PollInterval = flagPollInterval
+		}
 	}
-	if a.pollInterval == 0 {
-		a.pollInterval = *flagPollInterval
-	}
-	log.Printf("after assign pollInterval=%d", a.pollInterval)
+	log.Printf("after assign PollInterval=%d", a.PollInterval)
 
 	return nil
 }
@@ -113,12 +96,12 @@ func (a *Agent) Run(cmdArgs []string) error {
 	var repo = repository.NewMemRepository()
 
 	Collect(time.Now(), repo)
-	var collectTimer = time.NewTicker(time.Second * time.Duration(a.pollInterval))
+	var collectTimer = time.NewTicker(time.Second * time.Duration(*a.PollInterval))
 	go CollectEvent(collectTimer, repo)
 
 	var httpc = http.Client{Timeout: time.Second * time.Duration(30)}
-	var sendTimer = time.NewTicker(time.Second * time.Duration(a.reportInterval))
-	go SendEvent(sendTimer, repo, httpc, a.host)
+	var sendTimer = time.NewTicker(time.Second * time.Duration(*a.ReportInterval))
+	go SendEvent(sendTimer, repo, httpc, a.Host)
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
@@ -215,36 +198,17 @@ func SendEvent(tick *time.Ticker, repo repository.Repository, httpc http.Client,
 
 func Send(repo repository.Repository, httpc http.Client, host string) error {
 	var err error
+	var m *models.Metrics
 	//log.Printf("metrics=%s", repo.GetAllAsString())
-	var m repository.Metrics
 	for k, v := range repo.GetAll() {
-		m.ID = k
-		switch vt := v.(type) {
-		case float64:
-			m.MType = "gauge"
-			if f, ok := v.(float64); ok {
-				m.Value = &f
-			} else {
-				err = fmt.Errorf("any to float conversion error")
-				log.Err(err).Msg("")
-				return err
-			}
-		case int64:
-			m.MType = "counter"
-			if i, ok := v.(int64); ok {
-				m.Delta = &i
-			} else {
-				err = fmt.Errorf("any to int conversion error")
-				log.Err(err).Msg("")
-				return err
-			}
-		default:
-			err = fmt.Errorf("invalid metric type %s", reflect.TypeOf(vt).Name())
-			log.Err(err).Msg("")
+		m = new(models.Metrics)
+		err = models.FromKeyValue(m, k, v)
+		if err != nil {
+			log.Err(err).Msg("model create exception")
 			return err
 		}
 		var b []byte
-		b, err = json.Marshal(m)
+		b, err = json.Marshal(*m)
 		if err != nil {
 			log.Err(err).Msg("json marshal exception")
 			return err

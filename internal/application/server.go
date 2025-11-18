@@ -7,24 +7,26 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/rs/zerolog/log"
 
 	handlers "github.com/dag3322-oss/metrics/internal/handler"
-	metrics "github.com/dag3322-oss/metrics/internal/repository"
+	repository "github.com/dag3322-oss/metrics/internal/repository"
 	echo "github.com/labstack/echo/v4"
 	middleware "github.com/labstack/echo/v4/middleware"
 )
 
 type Server struct {
-	host string
-}
-
-func (s *Server) SetHost(host string) {
-	s.host = host
+	Host                   string
+	StoreInterval          *int64
+	StoragePath            string
+	LoadFromStorageOnStart *bool
 }
 
 func (s *Server) setParams(cmdArgs []string) error {
+	var err error
 	if cmdArgs == nil {
 		cmdArgs = os.Args[1:]
 		log.Printf("os.Args=%s", os.Args)
@@ -32,20 +34,50 @@ func (s *Server) setParams(cmdArgs []string) error {
 	log.Printf("cmdArgs=%s", cmdArgs)
 	var flagSet = flag.NewFlagSet("server", flag.ExitOnError)
 	var flagHost = flagSet.String("a", "localhost:8080", "host:port")
+	var flagStoreInterval = flagSet.Int64("i", 300, "metrics store to file interval, sec")
+	var flagStoragePath = flagSet.String("f", "./metrics.json", "metrics storage path")
+	var flagLoadFromStorageOnStart = flagSet.Bool("r", false, "load metrics from storage on start")
 	if len(cmdArgs) > 0 {
 		flagSet.Parse(cmdArgs) //on error will print descriptive error and exit
 	}
-	log.Printf("before assign s.host=%s,os.host=%s,flag.host=%s", s.host, os.Getenv("ADDRESS"), *flagHost)
+	log.Printf("before assign s.host=%s,os.host=%s,flag.host=%s", s.Host, os.Getenv("ADDRESS"), *flagHost)
 
-	if s.host == "" {
-		s.host = os.Getenv("ADDRESS")
+	s.Host = NotEmpty(s.Host, os.Getenv("ADDRESS"), *flagHost)
+	log.Printf("after assign s.host=%s", s.Host)
+	_, _, err = net.SplitHostPort(s.Host)
+	if err != nil {
+		return err
 	}
-	if s.host == "" {
-		s.host = *flagHost
+	log.Printf("host=%s", s.Host)
+
+	if s.StoreInterval == nil {
+		se, exists := os.LookupEnv("STORE_INTERVAL")
+		if exists {
+			i, err := strconv.ParseInt(se, 10, 8)
+			if err != nil {
+				return err
+			}
+			s.StoreInterval = &i
+		} else {
+			s.StoreInterval = flagStoreInterval
+		}
 	}
-	log.Printf("after assign s.host=%s", s.host)
-	_, _, err := net.SplitHostPort(s.host)
-	log.Printf("host=%s", s.host)
+
+	s.StoragePath = NotEmpty(s.StoragePath, os.Getenv("FILE_STORAGE_PATH"), *flagStoragePath)
+
+	if s.LoadFromStorageOnStart == nil {
+		lso, exists := os.LookupEnv("RESTORE")
+		if exists {
+			b2, err := strconv.ParseBool(lso)
+			if err != nil {
+				return err
+			}
+			s.LoadFromStorageOnStart = &b2
+		} else {
+			s.LoadFromStorageOnStart = flagLoadFromStorageOnStart
+		}
+	}
+
 	return err
 }
 
@@ -56,7 +88,7 @@ func (s Server) Run(cmdArgs []string) error {
 		return err
 	}
 
-	var repo = metrics.NewMemRepository()
+	var repo = repository.NewMemRepository()
 
 	e := echo.New()
 
@@ -108,8 +140,26 @@ func (s Server) Run(cmdArgs []string) error {
 	values.GET("*", hg.HandleMetricGetURL)
 	values.POST("*", hg.HandleMetricGet)
 
-	if err := e.Start(s.host); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	log.Printf("LoadFromStorageOnStart=%t", *s.LoadFromStorageOnStart)
+	if s.LoadFromStorageOnStart != nil && *s.LoadFromStorageOnStart {
+		handlers.Load(repo, s.StoragePath)
+	}
+
+	if s.StoreInterval != nil {
+		var flushTimer = time.NewTicker(time.Second * time.Duration(*s.StoreInterval))
+		go FlushEvent(flushTimer, repo, s.StoragePath)
+	}
+
+	if err := e.Start(s.Host); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Err(err).Msg("failed to start server")
 	}
+	log.Printf("HTTP server started")
+
 	return err
+}
+
+func FlushEvent(tick *time.Ticker, repo repository.Repository, filePath string) {
+	for range tick.C {
+		handlers.Flush(repo, filePath)
+	}
 }

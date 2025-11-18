@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 
+	models "github.com/dag3322-oss/metrics/internal/model"
 	metrics "github.com/dag3322-oss/metrics/internal/repository"
 	echo "github.com/labstack/echo/v4"
 	"github.com/rs/zerolog/log"
@@ -58,9 +59,8 @@ func (h MetricGetHandler) HandleMetricGetURL(c echo.Context) error {
 }
 
 func (h MetricGetHandler) HandleMetricGetJSON(c echo.Context) error {
-	var m metrics.Metrics
+	var m models.Metrics
 	var code = http.StatusOK
-	var name string
 	var err error
 	var b []byte
 
@@ -82,38 +82,24 @@ func (h MetricGetHandler) HandleMetricGetJSON(c echo.Context) error {
 	}
 
 	if code == http.StatusOK {
-		code, name, _, err = Validate("value", m)
+		code, err = models.Validate(models.ActionGet, &m)
 		if err != nil {
-			code = http.StatusBadRequest
 			log.Err(err).Msg("validate exception")
 		}
 	}
 
 	if code == http.StatusOK {
-		var value, exists = h.repo.Get(name)
-		log.Printf("name=%s,value=%v,exists=%v", name, value, exists)
-		if exists {
-			switch m.MType {
-			case "gauge":
-				if f, ok := value.(float64); ok {
-					m.Value = &f
-				} else {
-					code = http.StatusBadRequest
-					log.Err(err).Msg("any to float conversion error")
-				}
-			case "counter":
-				if i, ok := value.(int64); ok {
-					m.Delta = &i
-				} else {
-					code = http.StatusBadRequest
-					log.Err(err).Msg("any to int conversion error")
-				}
-			default:
-				code = http.StatusBadRequest
-				log.Err(err).Msg("invalid value type")
-			}
-		} else {
+		value, exists := h.repo.Get(m.ID)
+		if !exists {
 			code = http.StatusNotFound
+			log.Printf("metric not found name=%s", m.ID)
+		} else {
+			err = models.SetValue(&m, value)
+			if err != nil {
+				code = http.StatusBadRequest
+				log.Err(err).Msg("response to json exception")
+			}
+
 		}
 	}
 

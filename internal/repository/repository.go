@@ -5,4 +5,5 @@ type Repository interface {
 	GetAllAsString() string
 	GetAll() map[string]any
 	Get(name string) (value any, exists bool)
+	SaveAll(m map[string]any) error
 }

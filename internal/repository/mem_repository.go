@@ -77,3 +77,11 @@ func (s MemRepository) Get(name string) (value any, exists bool) {
 	value, exists = s.metrics[name]
 	return value, exists
 }
+
+func (s MemRepository) SaveAll(m map[string]any) error {
+	s.mx.Lock()
+	defer s.mx.Unlock()
+	s.metrics = m
+	log.Printf("Metrics saved=%d", len(s.metrics))
+	return nil
+}

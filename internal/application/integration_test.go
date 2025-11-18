@@ -17,14 +17,16 @@ func TestIntegration(t *testing.T) {
 	var host = "localhost:8080"
 
 	var s = Server{}
-	s.SetHost(host)
+	s.Host = host
 	go s.Run([]string{})
 
-	var c = Agent{}
-	c.SetHost(host)
-	c.SetReportInterval(5)
-	c.SetPollInterval(2)
-	go c.Run([]string{})
+	var a = Agent{}
+	a.Host = host
+	var i int64 = 5
+	a.ReportInterval = &i
+	var j int64 = 2
+	a.PollInterval = &j
+	go a.Run([]string{})
 
 	time.Sleep(time.Duration(10) * time.Second)
 	var httpc = http.Client{Timeout: time.Duration(1) * time.Second}
@@ -43,6 +45,6 @@ func TestIntegration(t *testing.T) {
 		log.Err(err).Msg("Get exception")
 	}
 	assert.NoError(t, err, "integration")
-	i := len(strings.Split(metrics, "\n"))
-	assert.True(t, i == 29, fmt.Sprintf("metrics collection size=%d", i))
+	ii := len(strings.Split(metrics, "\n"))
+	assert.True(t, ii == 29, fmt.Sprintf("metrics collection size=%d", ii))
 }

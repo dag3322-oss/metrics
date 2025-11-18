@@ -8,6 +8,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	models "github.com/dag3322-oss/metrics/internal/model"
 	metrics "github.com/dag3322-oss/metrics/internal/repository"
 	echo "github.com/labstack/echo/v4"
 )
@@ -56,7 +57,7 @@ func (h MetricUpdateHandler) HandleMetricUpdateURL(c echo.Context) error {
 }
 
 func (h MetricUpdateHandler) HandleMetricUpdateJSON(c echo.Context) error {
-	var m metrics.Metrics
+	var m models.Metrics
 	var code = http.StatusOK
 	var name string
 	var value any
@@ -79,6 +80,12 @@ func (h MetricUpdateHandler) HandleMetricUpdateJSON(c echo.Context) error {
 		log.Printf("body=%s", string(b))
 	}
 
+	if code == http.StatusOK {
+		code, err = models.Validate(models.ActionUpdate, &m)
+		if err != nil {
+			log.Err(err).Msg("validate exception")
+		}
+	}
 	// по непонятной причине Bind не работает с декомпрессированым телом запроса,
 	// причём декомпрессированным как в middleware так и вручную
 	// deflate ожидаемо не помог
@@ -88,9 +95,10 @@ func (h MetricUpdateHandler) HandleMetricUpdateJSON(c echo.Context) error {
 	   	}
 	*/
 	if code == http.StatusOK {
-		code, name, value, err = Validate("update", m)
-		if code != http.StatusOK {
+		name, value, err = models.ToKeyValue(&m)
+		if err != nil {
 			log.Err(err).Msg("validate")
+			code = http.StatusBadRequest
 		}
 	}
 
