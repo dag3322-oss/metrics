@@ -3,6 +3,7 @@ package metrics
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"sync"
 
@@ -81,7 +82,7 @@ func (s MemRepository) Get(name string) (value any, exists bool) {
 func (s MemRepository) SaveAll(m map[string]any) error {
 	s.mx.Lock()
 	defer s.mx.Unlock()
-	s.metrics = m
-	log.Printf("Metrics saved=%d", len(s.metrics))
+	maps.Copy(s.metrics, m)
+	log.Printf("Metrics saved=%d", len(m))
 	return nil
 }

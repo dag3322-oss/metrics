@@ -15,7 +15,7 @@ func Flush(repo repository.Repository, fileName string) error {
 	var m models.Metrics
 	var mkv = repo.GetAll()
 	var mm []models.Metrics
-	var i int = 0
+	var i = 0
 	for k, v := range mkv {
 		err = models.FromKeyValue(&m, k, v)
 		if err == nil {
@@ -65,6 +65,6 @@ func Load(repo repository.Repository, fileName string) error {
 			return err
 		}
 	}
-	log.Printf("loaded=%d from %s", len(mm), fileName)
+	log.Printf("loaded=%d from %s,repo=%+v", len(mm), fileName, repo)
 	return repo.SaveAll(mkv)
 }
