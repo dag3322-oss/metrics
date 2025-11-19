@@ -1,10 +1,14 @@
 package handler
 
 import (
+	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 
+	echo "github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -40,6 +44,10 @@ func (s MockRepository) Get(name string) (value any, exists bool) {
 	}
 }
 
+func (s MockRepository) SaveAll(m map[string]any) error {
+	return nil
+}
+
 type ResponseWriterMock struct {
 	status *int
 }
@@ -56,10 +64,12 @@ func (w ResponseWriterMock) WriteHeader(statusCode int) {
 	*w.status = statusCode
 }
 
-func TItem(t *testing.T, h MetricRequestHandler, _url string, w ResponseWriterMock, status int, message string) {
+func TItem(t *testing.T, h echo.HandlerFunc, _url string, w ResponseWriterMock, status int, message string) {
 	request, err := BuildRequest(_url)
 	require.True(t, err == nil, "Error build request")
-	h.Handle(w, request)
+	c := echo.New().NewContext(request, w)
+	c.Request().Method = "GET"
+	h(c)
 	assert.True(t, *w.status == status, message)
 }
 
@@ -67,4 +77,30 @@ func BuildRequest(urlString string) (*http.Request, error) {
 	var err error
 	urlRef, err := url.Parse(urlString)
 	return &http.Request{URL: urlRef}, err
+}
+
+func JItem(t *testing.T, h echo.HandlerFunc, _url string, _json string, w ResponseWriterMock, status int, message string) {
+	request, err := BuildJSONRequest(_url, _json)
+	assert.NoError(t, err, "BuildJsonRequest")
+	require.True(t, err == nil, "Error build request")
+	c := echo.New().NewContext(request, w)
+	c.Request().Method = "POST"
+	h(c)
+	assert.True(t, *w.status == status, fmt.Sprintf("%s,status=%v", message, *w.status))
+}
+
+func BuildJSONRequest(urlString string, _json string) (*http.Request, error) {
+	var err error
+	urlRef, err := url.Parse(urlString)
+	if err != nil {
+		return nil, err
+	}
+	var r = http.Request{}
+	r.URL = urlRef
+	r.Header = http.Header{}
+	r.Header.Set("Content-Type", "application/json")
+	stringReader := strings.NewReader(_json)
+	r.Body = io.NopCloser(stringReader)
+	r.ContentLength = int64(len(_json))
+	return &r, nil
 }

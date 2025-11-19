@@ -1,18 +1,20 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 
+	models "github.com/dag3322-oss/metrics/internal/model"
 	"github.com/rs/zerolog/log"
 )
 
 func ParseURL(u url.URL) (resultCode int, name string, value any, err error) {
 	resultCode = http.StatusOK
 
-	log.Printf("url path=%s", strings.Trim(u.Path, "/"))
+	log.Debug().Msg(fmt.Sprintf("url path=%s", strings.Trim(u.Path, "/")))
 	var elements = strings.Split(strings.Trim(u.Path, "/"), "/")
 	var action = elements[0]
 	if (action == "update" && len(elements) >= 4) || (action == "value" && len(elements) >= 3) {
@@ -21,7 +23,7 @@ func ParseURL(u url.URL) (resultCode int, name string, value any, err error) {
 			resultCode = http.StatusNotFound
 		} else {
 			switch elements[1] {
-			case "gauge":
+			case models.Gauge:
 				if action == "update" {
 					f, err := strconv.ParseFloat(elements[3], 64)
 					if err != nil {
@@ -30,7 +32,7 @@ func ParseURL(u url.URL) (resultCode int, name string, value any, err error) {
 						value = f
 					}
 				}
-			case "counter":
+			case models.Counter:
 				if action == "update" {
 					i, err := strconv.ParseInt(elements[3], 0, 64)
 					if err != nil {

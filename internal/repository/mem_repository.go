@@ -3,6 +3,7 @@ package metrics
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"sync"
 
@@ -33,6 +34,8 @@ func (s MemRepository) UpdateMetric(name string, value any) error {
 		s.metrics[name] = value
 	case reflect.Uint64:
 		s.metrics[name] = float64(value.(uint64))
+	case reflect.Uint32:
+		s.metrics[name] = float64(value.(uint32))
 	case reflect.Int64:
 		if s.metrics[name] == nil {
 			s.metrics[name] = value
@@ -42,7 +45,7 @@ func (s MemRepository) UpdateMetric(name string, value any) error {
 	default:
 		return fmt.Errorf("invalid metric type %s", reflect.TypeOf(value).Name())
 	}
-	log.Printf("metrics added %s,size=%d", name, len(s.metrics))
+	log.Debug().Msg(fmt.Sprintf("metrics added %s,size=%d", name, len(s.metrics)))
 	return nil
 }
 
@@ -63,9 +66,7 @@ func (s MemRepository) GetAll() map[string]any {
 	s.mx.Lock()
 	defer s.mx.Unlock()
 	var result = make(map[string]any, len(s.metrics))
-	for k, v := range s.metrics {
-		result[k] = v
-	}
+	maps.Copy(result, s.metrics)
 	return result
 }
 
@@ -74,4 +75,12 @@ func (s MemRepository) Get(name string) (value any, exists bool) {
 	defer s.mx.Unlock()
 	value, exists = s.metrics[name]
 	return value, exists
+}
+
+func (s MemRepository) SaveAll(m map[string]any) error {
+	s.mx.Lock()
+	defer s.mx.Unlock()
+	maps.Copy(s.metrics, m)
+	log.Debug().Msg(fmt.Sprintf("Metrics saved=%d", len(m)))
+	return nil
 }
