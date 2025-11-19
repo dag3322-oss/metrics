@@ -1,19 +1,23 @@
 package application
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/rs/zerolog/log"
 
 	handlers "github.com/dag3322-oss/metrics/internal/handler"
 	repository "github.com/dag3322-oss/metrics/internal/repository"
+	pg_pool "github.com/jackc/pgx/v5/pgxpool"
 	echo "github.com/labstack/echo/v4"
 	middleware "github.com/labstack/echo/v4/middleware"
 )
@@ -23,6 +27,7 @@ type Server struct {
 	StoreInterval          *int64
 	StoragePath            string
 	LoadFromStorageOnStart *bool
+	DBConnectionString     *string
 }
 
 func (s *Server) setParams(cmdArgs []string) error {
@@ -35,6 +40,7 @@ func (s *Server) setParams(cmdArgs []string) error {
 	var flagStoreInterval = flagSet.Int64("i", 300, "metrics store to file interval, sec")
 	var flagStoragePath = flagSet.String("f", "./metrics.json", "metrics storage path")
 	var flagLoadFromStorageOnStart = flagSet.Bool("r", false, "load metrics from storage on start")
+	var flagDBConnectionString = flagSet.String("d", "", "database connection string")
 	if len(cmdArgs) > 0 {
 		flagSet.Parse(cmdArgs)
 	}
@@ -76,6 +82,18 @@ func (s *Server) setParams(cmdArgs []string) error {
 		}
 	}
 
+	if s.DBConnectionString == nil {
+		db, exists := os.LookupEnv("DATABASE_DSN")
+		if exists {
+			s.DBConnectionString = &db
+		} else {
+			s.DBConnectionString = flagDBConnectionString
+		}
+	}
+	if s.DBConnectionString == nil {
+		err = errors.New("database connection string not specified")
+	}
+
 	return err
 }
 
@@ -87,6 +105,16 @@ func (s Server) Run(cmdArgs []string) error {
 	}
 
 	var repo = repository.NewMemRepository()
+
+	stopChan := make(chan os.Signal, 1)
+	signal.Notify(stopChan, syscall.SIGINT, syscall.SIGTERM)
+
+	db, err := pg_pool.New(context.Background(), *s.DBConnectionString)
+	if err != nil {
+		log.Err(err).Msg("database connection error")
+		return err
+	}
+	defer db.Close()
 
 	e := echo.New()
 
@@ -138,6 +166,10 @@ func (s Server) Run(cmdArgs []string) error {
 	values.GET("*", hg.HandleMetricGet)
 	values.POST("*", hg.HandleMetricGet)
 
+	hp := handlers.NewDBPingHandler(db)
+	ping := e.Group("/ping")
+	ping.GET("*", hp.HandlePing)
+
 	log.Debug().Msg(fmt.Sprintf("LoadFromStorageOnStart=%t", *s.LoadFromStorageOnStart))
 	if s.LoadFromStorageOnStart != nil && *s.LoadFromStorageOnStart {
 		handlers.Load(repo, s.StoragePath)
@@ -148,10 +180,23 @@ func (s Server) Run(cmdArgs []string) error {
 		go FlushEvent(flushTimer, repo, s.StoragePath)
 	}
 
-	if err := e.Start(s.Host); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Err(err).Msg("failed to start server")
+	go func() {
+		if err := e.Start(s.Host); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Err(err).Msg("failed to start server")
+		}
+	}()
+	<-stopChan
+	fmt.Println("Received shutdown signal. Starting graceful shutdown...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err = e.Shutdown(ctx)
+	if err != nil {
+		os.Exit(1)
 	}
 
+	os.Exit(0)
 	return err
 }
 
