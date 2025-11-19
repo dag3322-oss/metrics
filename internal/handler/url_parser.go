@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -13,7 +14,7 @@ import (
 func ParseURL(u url.URL) (resultCode int, name string, value any, err error) {
 	resultCode = http.StatusOK
 
-	log.Printf("url path=%s", strings.Trim(u.Path, "/"))
+	log.Debug().Msg(fmt.Sprintf("url path=%s", strings.Trim(u.Path, "/")))
 	var elements = strings.Split(strings.Trim(u.Path, "/"), "/")
 	var action = elements[0]
 	if (action == "update" && len(elements) >= 4) || (action == "value" && len(elements) >= 3) {

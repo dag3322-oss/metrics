@@ -35,25 +35,21 @@ func (a *Agent) setParams(cmdArgs []string) error {
 	var err error
 	if cmdArgs == nil {
 		cmdArgs = os.Args[1:]
-		log.Printf("os.Args=%s", os.Args)
 	}
-	log.Printf("cmdArgs=%s", cmdArgs)
 	var flagSet = flag.NewFlagSet("server", flag.ExitOnError)
 	var flagHost = flagSet.String("a", "localhost:8080", "host:port")
 	var flagReportInterval = flagSet.Int64("r", 10, "send interval(seconds)")
 	var flagPollInterval = flagSet.Int64("p", 2, "poll interval(seconds)")
 	if len(cmdArgs) > 0 {
-		flagSet.Parse(cmdArgs) //on error will print descriptive error and exit
+		flagSet.Parse(cmdArgs)
 	}
-	log.Printf("before assign s.host=%s,os.host=%s,flag.host=%s", a.Host, os.Getenv("ADDRESS"), *flagHost)
 
 	a.Host = NotEmpty(a.Host, os.Getenv("ADDRESS"), *flagHost)
-	log.Printf("after assign s.host=%s", a.Host)
 	_, _, err = net.SplitHostPort(a.Host)
 	if err != nil {
 		return err
 	}
-	log.Printf("host=%s", a.Host)
+	log.Debug().Msg(fmt.Sprintf("host=%s", a.Host))
 
 	if a.ReportInterval == nil {
 		se, exists := os.LookupEnv("REPORT_INTERVAL")
@@ -67,7 +63,6 @@ func (a *Agent) setParams(cmdArgs []string) error {
 			a.ReportInterval = flagReportInterval
 		}
 	}
-	log.Printf("after assign reportInterval=%d", a.ReportInterval)
 
 	if a.PollInterval == nil {
 		se, exists := os.LookupEnv("POLL_INTERVAL")
@@ -81,7 +76,6 @@ func (a *Agent) setParams(cmdArgs []string) error {
 			a.PollInterval = flagPollInterval
 		}
 	}
-	log.Printf("after assign PollInterval=%d", a.PollInterval)
 
 	return nil
 }
@@ -199,7 +193,6 @@ func SendEvent(tick *time.Ticker, repo repository.Repository, httpc http.Client,
 func Send(repo repository.Repository, httpc http.Client, host string) error {
 	var err error
 	var m *models.Metrics
-	//log.Printf("metrics=%s", repo.GetAllAsString())
 	for k, v := range repo.GetAll() {
 		m = new(models.Metrics)
 		err = models.FromKeyValue(m, k, v)
@@ -233,6 +226,7 @@ func Send(repo repository.Repository, httpc http.Client, host string) error {
 		req.Header.Add(echo.HeaderVary, echo.HeaderAcceptEncoding)
 		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 		client := &http.Client{}
+		client.Timeout = 30 * time.Second
 		resp, err := client.Do(req)
 		if err != nil {
 			log.Err(err).Msg("request send exception")
@@ -247,7 +241,7 @@ func Send(repo repository.Repository, httpc http.Client, host string) error {
 		}
 		defer resp.Body.Close()
 	}
-	log.Printf("metrics sended")
+	log.Debug().Msg("metrics sended")
 	repo.UpdateMetric("PollCount", int64(0))
 	return nil
 }

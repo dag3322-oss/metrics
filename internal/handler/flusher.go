@@ -36,7 +36,7 @@ func Flush(repo repository.Repository, fileName string) error {
 		log.Err(err).Msg("file create exception")
 		return err
 	}
-	log.Printf("flushed=%d to %s", len(mm), fileName)
+	log.Debug().Msg(fmt.Sprintf("flushed=%d to %s", len(mm), fileName))
 	return nil
 }
 
@@ -65,6 +65,6 @@ func Load(repo repository.Repository, fileName string) error {
 			return err
 		}
 	}
-	log.Printf("loaded=%d from %s,repo=%+v", len(mm), fileName, repo)
+	log.Debug().Msg(fmt.Sprintf("loaded=%d from %s,repo=%+v", len(mm), fileName, repo))
 	return repo.SaveAll(mkv)
 }

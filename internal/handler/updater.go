@@ -20,96 +20,91 @@ type MetricUpdateHandler struct {
 func NewMetricUpdateHandler(
 	repo metrics.Repository,
 ) MetricUpdateHandler {
-	if repo == nil {
-		panic("empty repository")
-	}
-
 	return MetricUpdateHandler{repo: repo}
 }
 
 func (h MetricUpdateHandler) HandleMetricUpdate(c echo.Context) error {
-	mediaType := GetMediaType(c.Request())
-	switch mediaType {
-	case echo.MIMEApplicationJSON:
-		return h.HandleMetricUpdateJSON(c)
-	case echo.MIMETextPlain, "":
-		return h.HandleMetricUpdateURL(c)
+	var code int
+	var body []byte
+	var err error
+
+	switch c.Request().Method {
+	case "GET":
+		code, body, err = h.HandleMetricUpdateURL(c)
+	case "POST":
+		mediaType := GetMediaType(c.Request())
+		switch mediaType {
+		case echo.MIMEApplicationJSON:
+			code, body, err = h.HandleMetricUpdateJSON(c)
+		case echo.MIMETextPlain, "":
+			code, body, err = h.HandleMetricUpdateURL(c)
+		default:
+			c.Response().WriteHeader(http.StatusUnsupportedMediaType)
+			return fmt.Errorf("unsupported media type:%s", mediaType)
+		}
 	default:
-		c.Response().WriteHeader(http.StatusUnsupportedMediaType)
-		return fmt.Errorf("unsupported media type:%s", mediaType)
-	}
-}
-
-func (h MetricUpdateHandler) HandleMetricUpdateURL(c echo.Context) error {
-	code, name, value, err := ParseURL(*c.Request().URL)
-
-	if code == http.StatusOK {
-		err = h.repo.UpdateMetric(name, value)
-	}
-
-	if err != nil {
-		code = http.StatusBadRequest
-		log.Err(err).Msg("repository exception")
+		code = http.StatusMethodNotAllowed
+		err = fmt.Errorf("unsupported http method:%s", c.Request().Method)
 	}
 
 	c.Response().WriteHeader(code)
+	if len(body) > 0 {
+		c.Response().Write(body)
+	}
+	if err != nil {
+		log.Err(err)
+	}
+
 	return err
 }
 
-func (h MetricUpdateHandler) HandleMetricUpdateJSON(c echo.Context) error {
+func (h MetricUpdateHandler) HandleMetricUpdateURL(c echo.Context) (code int, body []byte, err error) {
+	code, name, value, err := ParseURL(*c.Request().URL)
+	if code != http.StatusOK {
+		return code, nil, err
+	}
+
+	err = h.repo.UpdateMetric(name, value)
+	if err != nil {
+		return http.StatusBadRequest, nil, err
+	}
+
+	return code, nil, err
+}
+
+func (h MetricUpdateHandler) HandleMetricUpdateJSON(c echo.Context) (code int, body []byte, err error) {
 	var m models.Metrics
-	var code = http.StatusOK
 	var name string
 	var value any
-	var err error
 	var b []byte
-	if code == http.StatusOK {
-		b, err = io.ReadAll(c.Request().Body)
-		if err != nil {
-			code = http.StatusBadRequest
-			log.Err(err).Msg("read request body")
-		}
+
+	code = http.StatusBadRequest
+
+	b, err = io.ReadAll(c.Request().Body)
+	if err != nil {
+		return http.StatusBadRequest, nil, err
 	}
 
-	if code == http.StatusOK {
-		err = json.Unmarshal(b, &m)
-		if err != nil {
-			code = http.StatusBadRequest
-			log.Err(err).Msg("json unmarshal exception")
-		}
-		log.Printf("body=%s", string(b))
+	err = json.Unmarshal(b, &m)
+	if err != nil {
+		return http.StatusBadRequest, nil, err
+	}
+	log.Debug().Msg(fmt.Sprintf("body=%s", string(b)))
+
+	code, err = models.Validate(models.ActionUpdate, &m)
+	if code != http.StatusOK {
+		return code, nil, err
 	}
 
-	if code == http.StatusOK {
-		code, err = models.Validate(models.ActionUpdate, &m)
-		if err != nil {
-			log.Err(err).Msg("validate exception")
-		}
-	}
-	// по непонятной причине Bind не работает с декомпрессированым телом запроса,
-	// причём декомпрессированным как в middleware так и вручную
-	// deflate ожидаемо не помог
-	/* 	if err = c.Bind(&m); err != nil {
-	   		code = http.StatusBadRequest
-	   		log.Err(err).Msg("json unmarshall")
-	   	}
-	*/
-	if code == http.StatusOK {
-		name, value, err = models.ToKeyValue(&m)
-		if err != nil {
-			log.Err(err).Msg("validate")
-			code = http.StatusBadRequest
-		}
+	name, value, err = models.ToKeyValue(&m)
+	if err != nil {
+		return http.StatusBadRequest, nil, err
 	}
 
-	if code == http.StatusOK {
-		err = h.repo.UpdateMetric(name, value)
-		if err != nil {
-			code = http.StatusBadRequest
-			log.Err(err).Msg("repository update")
-		}
+	err = h.repo.UpdateMetric(name, value)
+	if err != nil {
+		return http.StatusBadRequest, nil, err
 	}
 
-	c.Response().WriteHeader(code)
-	return err
+	return http.StatusOK, nil, nil
 }

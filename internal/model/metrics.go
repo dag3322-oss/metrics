@@ -9,10 +9,13 @@ import (
 )
 
 const (
-	Counter      = "counter"
-	Gauge        = "gauge"
-	ActionUpdate = "update"
-	ActionGet    = "value"
+	Counter string = "counter"
+	Gauge   string = "gauge"
+)
+
+const (
+	ActionUpdate string = "update"
+	ActionGet    string = "value"
 )
 
 // NOTE: Не усложняем пример, вводя иерархическую вложенность структур.
@@ -86,7 +89,7 @@ func Validate(action string, m *Metrics) (code int, err error) {
 		code = http.StatusBadRequest
 		err = fmt.Errorf("invalid metric type=%s", m.MType)
 	}
-	log.Printf("model validate=%+v,code=%d,err=%+v", m, code, err)
+	log.Debug().Msg(fmt.Sprintf("model validate=%+v,code=%d,err=%+v", m, code, err))
 	return code, err
 }
 

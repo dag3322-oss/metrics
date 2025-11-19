@@ -23,93 +23,96 @@ func NewMetricGetHandler(
 }
 
 func (h MetricGetHandler) HandleMetricGet(c echo.Context) error {
-	mediaType := GetMediaType(c.Request())
-	switch mediaType {
-	case echo.MIMEApplicationJSON:
-		return h.HandleMetricGetJSON(c)
-	case echo.MIMETextPlain, "":
-		return h.HandleMetricGetURL(c)
-	default:
-		c.Response().WriteHeader(http.StatusUnsupportedMediaType)
-		return fmt.Errorf("unsupported media type:%s", mediaType)
-	}
-}
+	var code int
+	var body []byte
+	var err error
 
-func (h MetricGetHandler) HandleMetricGetURL(c echo.Context) error {
-	code, name, _, err := ParseURL(*c.Request().URL)
-
-	if err != nil {
-		code = http.StatusBadRequest
-		log.Err(err).Msg("parse exception")
-	}
-
-	if code == http.StatusOK {
-		var value, exists = h.repo.Get(name)
-		log.Printf("name=%s,value=%v,exists=%v", name, value, exists)
-		if exists {
-			c.Response().Header().Set("Content-Type", "text/html")
-			c.Response().Write([]byte(fmt.Sprintf("%v", value)))
-		} else {
-			code = http.StatusNotFound
+	switch c.Request().Method {
+	case "GET":
+		code, body, err = h.HandleMetricGetURL(c)
+	case "POST":
+		mediaType := GetMediaType(c.Request())
+		switch mediaType {
+		case echo.MIMEApplicationJSON:
+			code, body, err = h.HandleMetricGetJSON(c)
+		case echo.MIMETextPlain, "":
+			code, body, err = h.HandleMetricGetURL(c)
+		default:
+			code = http.StatusUnsupportedMediaType
+			err = fmt.Errorf("unsupported media type:%s", mediaType)
 		}
+	default:
+		code = http.StatusMethodNotAllowed
+		err = fmt.Errorf("unsupported http method:%s", c.Request().Method)
 	}
 
+	if code == http.StatusContinue { // json written using echo Context
+		return nil
+	}
 	c.Response().WriteHeader(code)
+	if len(body) > 0 {
+		c.Response().Write(body)
+	}
+	if err != nil {
+		log.Err(err)
+	}
+
 	return err
 }
 
-func (h MetricGetHandler) HandleMetricGetJSON(c echo.Context) error {
+func (h MetricGetHandler) HandleMetricGetURL(c echo.Context) (code int, body []byte, err error) {
+	code, name, _, err := ParseURL(*c.Request().URL)
+	if code != http.StatusOK {
+		return code, nil, err
+	}
+
+	value, exists := h.repo.Get(name)
+	log.Debug().Msg(fmt.Sprintf("name=%s,value=%v,exists=%v", name, value, exists))
+	if exists {
+		c.Response().Header().Set("Content-Type", "text/html")
+		return http.StatusOK, []byte(fmt.Sprintf("%v", value)), nil
+	} else {
+		return http.StatusNotFound, nil, nil
+	}
+}
+
+func (h MetricGetHandler) HandleMetricGetJSON(c echo.Context) (code int, body []byte, err error) {
 	var m models.Metrics
-	var code = http.StatusOK
-	var err error
 	var b []byte
 
-	if code == http.StatusOK {
-		b, err = io.ReadAll(c.Request().Body)
+	code = http.StatusBadRequest
+
+	b, err = io.ReadAll(c.Request().Body)
+	if err != nil {
+		return http.StatusBadRequest, nil, err
+	}
+
+	err = json.Unmarshal(b, &m)
+	if err != nil {
+		return http.StatusBadRequest, nil, err
+	}
+	log.Debug().Msg(fmt.Sprintf("body=%s", string(b)))
+
+	code, err = models.Validate(models.ActionGet, &m)
+	if code != http.StatusOK {
+		return code, nil, err
+	}
+
+	value, exists := h.repo.Get(m.ID)
+	if !exists {
+		log.Debug().Msg(fmt.Sprintf("metric not found name=%s", m.ID))
+		return http.StatusNotFound, nil, nil
+	} else {
+		err = models.SetValue(&m, value)
 		if err != nil {
-			code = http.StatusBadRequest
-			log.Err(err).Msg("read request body")
+			return http.StatusBadRequest, nil, err
 		}
 	}
 
-	if code == http.StatusOK {
-		err = json.Unmarshal(b, &m)
-		if err != nil {
-			code = http.StatusBadRequest
-			log.Err(err).Msg("json unmarshal exception")
-		}
-		log.Printf("body=%s", string(b))
+	err = c.JSON(http.StatusOK, &m)
+	if err == nil {
+		return http.StatusContinue, nil, nil
+	} else {
+		return http.StatusBadRequest, nil, err
 	}
-
-	if code == http.StatusOK {
-		code, err = models.Validate(models.ActionGet, &m)
-		if err != nil {
-			log.Err(err).Msg("validate exception")
-		}
-	}
-
-	if code == http.StatusOK {
-		value, exists := h.repo.Get(m.ID)
-		if !exists {
-			code = http.StatusNotFound
-			log.Printf("metric not found name=%s", m.ID)
-		} else {
-			err = models.SetValue(&m, value)
-			if err != nil {
-				code = http.StatusBadRequest
-				log.Err(err).Msg("response to json exception")
-			}
-
-		}
-	}
-
-	if code == http.StatusOK {
-		err = c.JSON(code, &m)
-		if err != nil {
-			code = http.StatusBadRequest
-			log.Err(err).Msg("response to json exception")
-		}
-	}
-	c.Response().WriteHeader(code)
-	return err
 }

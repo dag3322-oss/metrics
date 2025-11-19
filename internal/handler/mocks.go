@@ -68,6 +68,7 @@ func TItem(t *testing.T, h echo.HandlerFunc, _url string, w ResponseWriterMock, 
 	request, err := BuildRequest(_url)
 	require.True(t, err == nil, "Error build request")
 	c := echo.New().NewContext(request, w)
+	c.Request().Method = "GET"
 	h(c)
 	assert.True(t, *w.status == status, message)
 }
@@ -83,6 +84,7 @@ func JItem(t *testing.T, h echo.HandlerFunc, _url string, _json string, w Respon
 	assert.NoError(t, err, "BuildJsonRequest")
 	require.True(t, err == nil, "Error build request")
 	c := echo.New().NewContext(request, w)
+	c.Request().Method = "POST"
 	h(c)
 	assert.True(t, *w.status == status, fmt.Sprintf("%s,status=%v", message, *w.status))
 }

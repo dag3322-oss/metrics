@@ -29,26 +29,24 @@ func (s *Server) setParams(cmdArgs []string) error {
 	var err error
 	if cmdArgs == nil {
 		cmdArgs = os.Args[1:]
-		log.Printf("os.Args=%s", os.Args)
 	}
-	log.Printf("cmdArgs=%s", cmdArgs)
 	var flagSet = flag.NewFlagSet("server", flag.ExitOnError)
 	var flagHost = flagSet.String("a", "localhost:8080", "host:port")
 	var flagStoreInterval = flagSet.Int64("i", 300, "metrics store to file interval, sec")
 	var flagStoragePath = flagSet.String("f", "./metrics.json", "metrics storage path")
 	var flagLoadFromStorageOnStart = flagSet.Bool("r", false, "load metrics from storage on start")
 	if len(cmdArgs) > 0 {
-		flagSet.Parse(cmdArgs) //on error will print descriptive error and exit
+		flagSet.Parse(cmdArgs)
 	}
-	log.Printf("before assign s.host=%s,os.host=%s,flag.host=%s", s.Host, os.Getenv("ADDRESS"), *flagHost)
+	log.Debug().Msg(fmt.Sprintf("before assign s.host=%s,os.host=%s,flag.host=%s", s.Host, os.Getenv("ADDRESS"), *flagHost))
 
 	s.Host = NotEmpty(s.Host, os.Getenv("ADDRESS"), *flagHost)
-	log.Printf("after assign s.host=%s", s.Host)
+	log.Debug().Msg(fmt.Sprintf("after assign s.host=%s", s.Host))
 	_, _, err = net.SplitHostPort(s.Host)
 	if err != nil {
 		return err
 	}
-	log.Printf("host=%s", s.Host)
+	log.Debug().Msg(fmt.Sprintf("host=%s", s.Host))
 
 	if s.StoreInterval == nil {
 		se, exists := os.LookupEnv("STORE_INTERVAL")
@@ -128,7 +126,7 @@ func (s Server) Run(cmdArgs []string) error {
 
 	hu := handlers.NewMetricUpdateHandler(repo)
 	updates := e.Group("/update")
-	updates.GET("*", hu.HandleMetricUpdateURL)
+	updates.GET("*", hu.HandleMetricUpdate)
 	updates.POST("*", hu.HandleMetricUpdate)
 
 	hl := handlers.NewMetricListHandler(repo)
@@ -137,10 +135,10 @@ func (s Server) Run(cmdArgs []string) error {
 
 	hg := handlers.NewMetricGetHandler(repo)
 	values := e.Group("/value")
-	values.GET("*", hg.HandleMetricGetURL)
+	values.GET("*", hg.HandleMetricGet)
 	values.POST("*", hg.HandleMetricGet)
 
-	log.Printf("LoadFromStorageOnStart=%t", *s.LoadFromStorageOnStart)
+	log.Debug().Msg(fmt.Sprintf("LoadFromStorageOnStart=%t", *s.LoadFromStorageOnStart))
 	if s.LoadFromStorageOnStart != nil && *s.LoadFromStorageOnStart {
 		handlers.Load(repo, s.StoragePath)
 	}
@@ -153,7 +151,6 @@ func (s Server) Run(cmdArgs []string) error {
 	if err := e.Start(s.Host); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Err(err).Msg("failed to start server")
 	}
-	log.Printf("HTTP server started")
 
 	return err
 }

@@ -45,7 +45,7 @@ func (s MemRepository) UpdateMetric(name string, value any) error {
 	default:
 		return fmt.Errorf("invalid metric type %s", reflect.TypeOf(value).Name())
 	}
-	log.Printf("metrics added %s,size=%d", name, len(s.metrics))
+	log.Debug().Msg(fmt.Sprintf("metrics added %s,size=%d", name, len(s.metrics)))
 	return nil
 }
 
@@ -66,9 +66,7 @@ func (s MemRepository) GetAll() map[string]any {
 	s.mx.Lock()
 	defer s.mx.Unlock()
 	var result = make(map[string]any, len(s.metrics))
-	for k, v := range s.metrics {
-		result[k] = v
-	}
+	maps.Copy(result, s.metrics)
 	return result
 }
 
@@ -83,6 +81,6 @@ func (s MemRepository) SaveAll(m map[string]any) error {
 	s.mx.Lock()
 	defer s.mx.Unlock()
 	maps.Copy(s.metrics, m)
-	log.Printf("Metrics saved=%d", len(m))
+	log.Debug().Msg(fmt.Sprintf("Metrics saved=%d", len(m)))
 	return nil
 }
