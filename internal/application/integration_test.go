@@ -40,7 +40,7 @@ func TestIntegration(t *testing.T) {
 			log.Err(err).Msg("read response exception")
 		}
 		metrics = string(b)
-		log.Debug().Msg(fmt.Sprintf("%s", metrics))
+		log.Debug().Msg(metrics)
 	} else {
 		log.Err(err).Msg("Get exception")
 	}
