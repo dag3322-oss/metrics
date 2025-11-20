@@ -8,17 +8,18 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	models "github.com/dag3322-oss/metrics/internal/model"
-	metrics "github.com/dag3322-oss/metrics/internal/repository"
+	"github.com/dag3322-oss/metrics/internal/model"
+	"github.com/dag3322-oss/metrics/internal/repository"
+	"github.com/dag3322-oss/metrics/internal/service"
 	echo "github.com/labstack/echo/v4"
 )
 
 type MetricUpdateHandler struct {
-	repo metrics.Repository
+	repo repository.Metric
 }
 
 func NewMetricUpdateHandler(
-	repo metrics.Repository,
+	repo repository.Metric,
 ) MetricUpdateHandler {
 	return MetricUpdateHandler{repo: repo}
 }
@@ -64,7 +65,12 @@ func (h MetricUpdateHandler) HandleMetricUpdateURL(c echo.Context) (code int, bo
 		return code, nil, err
 	}
 
-	err = h.repo.UpdateMetric(name, value)
+	m, err := service.NameValueToModel(name, value)
+	if err != nil {
+		return http.StatusBadRequest, nil, err
+	}
+
+	err = h.repo.SetOne(*m)
 	if err != nil {
 		return http.StatusBadRequest, nil, err
 	}
@@ -73,9 +79,7 @@ func (h MetricUpdateHandler) HandleMetricUpdateURL(c echo.Context) (code int, bo
 }
 
 func (h MetricUpdateHandler) HandleMetricUpdateJSON(c echo.Context) (code int, body []byte, err error) {
-	var m models.Metrics
-	var name string
-	var value any
+	var m model.Metric
 	var b []byte
 
 	code = http.StatusBadRequest
@@ -91,17 +95,12 @@ func (h MetricUpdateHandler) HandleMetricUpdateJSON(c echo.Context) (code int, b
 	}
 	log.Debug().Msg(fmt.Sprintf("body=%s", string(b)))
 
-	code, err = models.Validate(models.ActionUpdate, &m)
+	code, err = model.Validate(model.ActionUpdate, &m)
 	if code != http.StatusOK {
 		return code, nil, err
 	}
 
-	name, value, err = models.ToKeyValue(&m)
-	if err != nil {
-		return http.StatusBadRequest, nil, err
-	}
-
-	err = h.repo.UpdateMetric(name, value)
+	err = h.repo.SetOne(m)
 	if err != nil {
 		return http.StatusBadRequest, nil, err
 	}

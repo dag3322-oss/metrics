@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 
 	metrics "github.com/dag3322-oss/metrics/internal/repository"
@@ -8,18 +9,29 @@ import (
 )
 
 type MetricListHandler struct {
-	repo metrics.Repository
+	repo metrics.Metric
 }
 
 func NewMetricListHandler(
-	repo metrics.Repository,
+	repo metrics.Metric,
 ) MetricListHandler {
 	return MetricListHandler{repo: repo}
 }
 
 func (h MetricListHandler) HandleMetricsList(c echo.Context) error {
 	c.Response().Header().Set("Content-Type", "text/html")
-	var s = h.repo.GetAllAsString()
+
+	m, err := h.repo.GetAll()
+	if err != nil {
+		return err
+	}
+	s := ""
+	for _, mm := range m {
+		if s != "" {
+			s = s + "\n"
+		}
+		s = s + fmt.Sprint("%s %s", mm.ID, mm.StringValue())
+	}
 	c.Response().Write([]byte(s))
 	c.Response().WriteHeader(http.StatusOK)
 	return nil
