@@ -13,7 +13,7 @@ func TestMetricMemo(t *testing.T) {
 }
 
 func TestMetricFile(t *testing.T) {
-	test(t, NewFileRepository("c:/tmp/metrics.json"))
+	test(t, NewFileRepository("./metrics.json"))
 }
 
 func test(t *testing.T, repo Metric) {
