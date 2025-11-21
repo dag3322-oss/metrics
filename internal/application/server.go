@@ -74,7 +74,12 @@ func (s *Server) setParams(cmdArgs []string) error {
 			}
 			s.StoreInterval = &i
 		} else {
-			s.StoreInterval = flagStoreInterval
+			flagSet.Visit(func(f *flag.Flag) {
+				if f.Name == "i" {
+					s.StoreInterval = flagStoreInterval
+					return
+				}
+			})
 		}
 	}
 
@@ -209,9 +214,8 @@ func (s Server) Run(cmdArgs []string) error {
 
 	e.Use(handlers.GzipWithConfig(handlers.GzipConfig{
 		Skipper: func(c echo.Context) bool {
-			/* mediaType := handlers.GetMediaType(c.Request())
-			return !(mediaType == echo.MIMEApplicationJSON || mediaType == echo.MIMETextHTML) */
-			return false
+			mediaType := handlers.GetMediaType(c.Request())
+			return !(mediaType == echo.MIMEApplicationJSON || mediaType == echo.MIMETextHTML)
 		},
 		MinLength: 10,
 	}))

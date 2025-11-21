@@ -13,5 +13,8 @@ begin
 	with a as (select f ->> 'id' id, f ->> 'type' "type", (f ->> 'delta')::bigint delta, (f ->> 'value')::float "value", f ->> 'hash' hash from jsonb_array_elements(i_list) f),
 	b as (select id from metric m where exists (select 0 from a where a.id = m.id for no key update))
 	insert into metric(id, "type", delta, "value", hash) select id, "type", delta, "value", hash from a
-	on conflict (id) do update set delta = excluded.delta, "value" = excluded."value", hash = excluded.hash;   
+	on conflict (id) do update set 
+		delta = excluded.delta, 
+		"value" = case when a."type" = 'counter' then coalesce(metric.value, 0) + excluded."value" else excluded."value" end, 
+		hash = excluded.hash;   
 end $$;

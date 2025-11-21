@@ -45,6 +45,9 @@ func UpdateMetricValue(dst *model.Metric, src *model.Metric) error {
 		return errors.New("UpdateMetric src pointer is empty")
 	}
 	if dst != nil {
+		if src.MType != dst.MType {
+			return errors.New("cannot change metric`s type")
+		}
 		switch src.MType {
 		case model.Gauge:
 			*dst.Value = *src.Value

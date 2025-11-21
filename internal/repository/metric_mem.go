@@ -61,20 +61,19 @@ func (r MetricRepositoryMem) SetList(m map[string]model.Metric) error {
 	r.mx.Lock()
 	defer r.mx.Unlock()
 
-	for _, item_src := range m {
-		item_dst, ok := r.metrics[item_src.ID]
+	for _, itemSrc := range m {
+		itemDst, ok := r.metrics[itemSrc.ID]
 		if ok {
-			err := service.UpdateMetricValue(&item_dst, &item_src)
+			err := service.UpdateMetricValue(&itemDst, &itemSrc)
 			if err != nil {
 				log.Err(err).Msg("SetOne: UpdateMetricValue")
 				return err
 			}
 		} else {
-			r.metrics[item_src.ID] = item_src
+			r.metrics[itemSrc.ID] = itemSrc
 		}
 	}
 
-	maps.Copy(r.metrics, m)
 	log.Debug().Msg(fmt.Sprintf("Metrics saved=%d", len(m)))
 	return nil
 }

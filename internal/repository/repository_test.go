@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"os"
 	"testing"
 
 	"github.com/dag3322-oss/metrics/internal/model"
@@ -13,7 +14,9 @@ func TestMetricMemo(t *testing.T) {
 }
 
 func TestMetricFile(t *testing.T) {
-	test(t, NewFileRepository("./metrics.json"))
+	fileName := "./metrics.json"
+	os.Remove(fileName)
+	test(t, NewFileRepository(fileName))
 }
 
 func test(t *testing.T, repo Metric) {
@@ -38,13 +41,16 @@ func test(t *testing.T, repo Metric) {
 
 	m, err = service.NameValueToModel("float64", float64(100.600))
 	assert.NoError(t, err, "float64-2 to model")
-	mp := make(map[string]model.Metric)
-	mp[m.ID] = *m
-	err = repo.SetList(mp)
+	mm := make(map[string]model.Metric)
+	mm[m.ID] = *m
+	err = repo.SetList(mm)
 	assert.NoError(t, err, "float64-2 save all")
-	mp, err2 = repo.GetAll()
+	mm2, err2 := repo.GetAll()
 	assert.NoError(t, err2, "float64-2 get all")
-	assert.True(t, *m.Value == *mp[m.ID].Value, "float64-2 saved")
+	m3, ok := mm2[m.ID]
+	assert.True(t, ok, "float64-2 model in map")
+	assert.True(t, *m.Value == *m3.Value, "float64-2 saved")
+	t.Logf("m=%+v ... %f,m3=%+v ... %f", m, *m.Value, m3, *m3.Value)
 
 	m, err = service.NameValueToModel("int64", int64(1))
 	assert.NoError(t, err, "int64 to model")
@@ -52,14 +58,15 @@ func test(t *testing.T, repo Metric) {
 	assert.NoError(t, err, "int64 save one")
 	m2, err2 = repo.Get(m.ID)
 	assert.NoError(t, err2, "int64 get")
-	assert.True(t, *m.Delta == *m2.Delta, "int64 saved")
+	assert.True(t, m2 != nil && *m.Delta == *m2.Delta, "int64 saved")
 	t.Logf("m=%+v ... %d,m2=%+v ... %d", m, *m.Delta, m2, *m2.Delta)
+	i := *m2.Delta
 
 	m, err = service.NameValueToModel("int64", int64(2))
-	assert.NoError(t, err, "int642 to model")
+	assert.NoError(t, err, "int64-2 to model")
 	err = repo.SetOne(*m)
 	assert.NoError(t, err, "int64-2 save one")
 	m2, err2 = repo.Get(m.ID)
 	assert.NoError(t, err2, "int64-2 get")
-	assert.True(t, *m.Delta == *m2.Delta, "int64-2 saved")
+	assert.True(t, (m2 != nil) && (*m2.Delta == (*m.Delta+i)), "int64-2 saved")
 }
