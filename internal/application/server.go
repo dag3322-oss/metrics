@@ -213,11 +213,7 @@ func (s Server) Run(cmdArgs []string) error {
 	}))
 
 	e.Use(handlers.GzipWithConfig(handlers.GzipConfig{
-		Skipper: func(c echo.Context) bool {
-			mediaType := handlers.GetMediaType(c.Request())
-			return !(mediaType == echo.MIMEApplicationJSON || mediaType == echo.MIMETextHTML)
-		},
-		MinLength: 10,
+		MinLength: 1,
 	}))
 
 	hu := handlers.NewMetricUpdateHandler(repo)
