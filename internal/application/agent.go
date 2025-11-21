@@ -20,8 +20,8 @@ import (
 
 	"encoding/json"
 
-	models "github.com/dag3322-oss/metrics/internal/model"
-	repository "github.com/dag3322-oss/metrics/internal/repository"
+	"github.com/dag3322-oss/metrics/internal/repository"
+	"github.com/dag3322-oss/metrics/internal/service"
 	echo "github.com/labstack/echo/v4"
 )
 
@@ -29,6 +29,7 @@ type Agent struct {
 	Host           string
 	ReportInterval *int64
 	PollInterval   *int64
+	repo           repository.Metric
 }
 
 func (a *Agent) setParams(cmdArgs []string) error {
@@ -87,15 +88,15 @@ func (a *Agent) Run(cmdArgs []string) error {
 		return err
 	}
 
-	var repo = repository.NewMemRepository()
+	a.repo = repository.NewMemRepository()
 
-	Collect(time.Now(), repo)
+	Collect(time.Now(), a.repo)
 	var collectTimer = time.NewTicker(time.Second * time.Duration(*a.PollInterval))
-	go CollectEvent(collectTimer, repo)
+	go CollectEvent(collectTimer, a.repo)
 
 	var httpc = http.Client{Timeout: time.Second * time.Duration(30)}
 	var sendTimer = time.NewTicker(time.Second * time.Duration(*a.ReportInterval))
-	go SendEvent(sendTimer, repo, httpc, a.Host)
+	go SendEvent(sendTimer, a.repo, httpc, a.Host)
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
@@ -139,49 +140,49 @@ func GetSamples() []metrics.Sample {
 	return s
 }
 
-func CollectEvent(tick *time.Ticker, repo repository.Repository) {
+func CollectEvent(tick *time.Ticker, repo repository.Metric) {
 	for t := range tick.C {
 		Collect(t, repo)
 	}
 }
 
-func Collect(t time.Time, repo repository.Repository) error {
+func Collect(t time.Time, repo repository.Metric) error {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	repo.UpdateMetric("Alloc", m.Alloc)
-	repo.UpdateMetric("BuckHashSys", m.BuckHashSys)
-	repo.UpdateMetric("Frees", m.Frees)
-	repo.UpdateMetric("GCCPUFraction", m.GCCPUFraction)
-	repo.UpdateMetric("GCSys", m.GCSys)
-	repo.UpdateMetric("HeapAlloc", m.HeapAlloc)
-	repo.UpdateMetric("HeapIdle", m.HeapIdle)
-	repo.UpdateMetric("HeapInuse", m.HeapInuse)
-	repo.UpdateMetric("HeapObjects", m.HeapObjects)
-	repo.UpdateMetric("HeapReleased", m.HeapReleased)
-	repo.UpdateMetric("HeapSys", m.HeapSys)
-	repo.UpdateMetric("LastGC", m.LastGC)
-	repo.UpdateMetric("Lookups", m.Lookups)
-	repo.UpdateMetric("MCacheInuse", m.MCacheInuse)
-	repo.UpdateMetric("MCacheSys", m.MCacheSys)
-	repo.UpdateMetric("MSpanInuse", m.MSpanInuse)
-	repo.UpdateMetric("MSpanSys", m.MSpanSys)
-	repo.UpdateMetric("Mallocs", m.Mallocs)
-	repo.UpdateMetric("NextGC", m.NextGC)
-	repo.UpdateMetric("NumForcedGC", m.NumForcedGC)
-	repo.UpdateMetric("NumGC", m.NumGC)
-	repo.UpdateMetric("OtherSys", m.OtherSys)
-	repo.UpdateMetric("PauseTotalNs", m.PauseTotalNs)
-	repo.UpdateMetric("StackInuse", m.StackInuse)
-	repo.UpdateMetric("StackSys", m.StackSys)
-	repo.UpdateMetric("Sys", m.Sys)
-	repo.UpdateMetric("TotalAlloc", m.TotalAlloc)
+	setMetric(repo, "Alloc", m.Alloc)
+	setMetric(repo, "BuckHashSys", m.BuckHashSys)
+	setMetric(repo, "Frees", m.Frees)
+	setMetric(repo, "GCCPUFraction", m.GCCPUFraction)
+	setMetric(repo, "GCSys", m.GCSys)
+	setMetric(repo, "HeapAlloc", m.HeapAlloc)
+	setMetric(repo, "HeapIdle", m.HeapIdle)
+	setMetric(repo, "HeapInuse", m.HeapInuse)
+	setMetric(repo, "HeapObjects", m.HeapObjects)
+	setMetric(repo, "HeapReleased", m.HeapReleased)
+	setMetric(repo, "HeapSys", m.HeapSys)
+	setMetric(repo, "LastGC", m.LastGC)
+	setMetric(repo, "Lookups", m.Lookups)
+	setMetric(repo, "MCacheInuse", m.MCacheInuse)
+	setMetric(repo, "MCacheSys", m.MCacheSys)
+	setMetric(repo, "MSpanInuse", m.MSpanInuse)
+	setMetric(repo, "MSpanSys", m.MSpanSys)
+	setMetric(repo, "Mallocs", m.Mallocs)
+	setMetric(repo, "NextGC", m.NextGC)
+	setMetric(repo, "NumForcedGC", m.NumForcedGC)
+	setMetric(repo, "NumGC", m.NumGC)
+	setMetric(repo, "OtherSys", m.OtherSys)
+	setMetric(repo, "PauseTotalNs", m.PauseTotalNs)
+	setMetric(repo, "StackInuse", m.StackInuse)
+	setMetric(repo, "StackSys", m.StackSys)
+	setMetric(repo, "Sys", m.Sys)
+	setMetric(repo, "TotalAlloc", m.TotalAlloc)
 
-	repo.UpdateMetric("RandomValue", rand.Float64())
-	repo.UpdateMetric("PollCount", int64(1))
+	setMetric(repo, "RandomValue", rand.Float64())
+	setMetric(repo, "PollCount", int64(1))
 	return nil
 }
 
-func SendEvent(tick *time.Ticker, repo repository.Repository, httpc http.Client, host string) {
+func SendEvent(tick *time.Ticker, repo repository.Metric, httpc http.Client, host string) {
 	for range tick.C {
 		var err = Send(repo, httpc, host)
 		if err != nil {
@@ -190,18 +191,16 @@ func SendEvent(tick *time.Ticker, repo repository.Repository, httpc http.Client,
 	}
 }
 
-func Send(repo repository.Repository, httpc http.Client, host string) error {
+func Send(repo repository.Metric, httpc http.Client, host string) error {
 	var err error
-	var m *models.Metrics
-	for k, v := range repo.GetAll() {
-		m = new(models.Metrics)
-		err = models.FromKeyValue(m, k, v)
-		if err != nil {
-			log.Err(err).Msg("model create exception")
-			return err
-		}
+	mm, err := repo.GetAll()
+	if err != nil {
+		log.Err(err).Msg("mem repository exception")
+		return err
+	}
+	for _, m := range mm {
 		var b []byte
-		b, err = json.Marshal(*m)
+		b, err = json.Marshal(m)
 		if err != nil {
 			log.Err(err).Msg("json marshal exception")
 			return err
@@ -242,6 +241,16 @@ func Send(repo repository.Repository, httpc http.Client, host string) error {
 		defer resp.Body.Close()
 	}
 	log.Debug().Msg("metrics sended")
-	repo.UpdateMetric("PollCount", int64(0))
+	setMetric(repo, "PollCount", int64(0))
 	return nil
+}
+
+func setMetric(repo repository.Metric, name string, value any) {
+	m, err := service.NameValueToModel(name, value)
+	if err != nil {
+		log.Err(err).Msg("NameValueToModel")
+		return
+	}
+	log.Debug().Msg(fmt.Sprintf("setMetric model=%+v", *m))
+	err = repo.SetOne(*m)
 }

@@ -20,12 +20,16 @@ func NewDBPingHandler(
 
 func (h DBPingHandler) HandlePing(c echo.Context) error {
 	c.Response().Header().Set("Content-Type", "text/html")
-	err := h.db.Ping(c.Request().Context())
-	if err == nil {
-		c.Response().WriteHeader(http.StatusOK)
-	} else {
+	if h.db == nil {
 		c.Response().WriteHeader(http.StatusInternalServerError)
-		log.Err(err).Msg("database ping error")
+	} else {
+		err := h.db.Ping(c.Request().Context())
+		if err == nil {
+			c.Response().WriteHeader(http.StatusOK)
+		} else {
+			c.Response().WriteHeader(http.StatusInternalServerError)
+			log.Err(err).Msg("database ping error")
+		}
 	}
 	return nil
 }

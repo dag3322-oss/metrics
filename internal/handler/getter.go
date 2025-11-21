@@ -6,18 +6,18 @@ import (
 	"io"
 	"net/http"
 
-	models "github.com/dag3322-oss/metrics/internal/model"
-	metrics "github.com/dag3322-oss/metrics/internal/repository"
+	"github.com/dag3322-oss/metrics/internal/model"
+	"github.com/dag3322-oss/metrics/internal/repository"
 	echo "github.com/labstack/echo/v4"
 	"github.com/rs/zerolog/log"
 )
 
 type MetricGetHandler struct {
-	repo metrics.Repository
+	repo repository.Metric
 }
 
 func NewMetricGetHandler(
-	repo metrics.Repository,
+	repo repository.Metric,
 ) MetricGetHandler {
 	return MetricGetHandler{repo: repo}
 }
@@ -66,18 +66,22 @@ func (h MetricGetHandler) HandleMetricGetURL(c echo.Context) (code int, body []b
 		return code, nil, err
 	}
 
-	value, exists := h.repo.Get(name)
-	log.Debug().Msg(fmt.Sprintf("name=%s,value=%v,exists=%v", name, value, exists))
-	if exists {
+	m, err := h.repo.Get(name)
+	if err != nil {
+		return code, nil, err
+	}
+	if m != nil {
 		c.Response().Header().Set("Content-Type", "text/html")
-		return http.StatusOK, []byte(fmt.Sprintf("%v", value)), nil
+		log.Debug().Msg(fmt.Sprintf("name=%s,value=%s,exists", m.ID, m.StringValue()))
+		return http.StatusOK, []byte(fmt.Sprintf("%s", m.StringValue())), nil
 	} else {
+		log.Debug().Msg(fmt.Sprintf("name=%s,not exists", name))
 		return http.StatusNotFound, nil, nil
 	}
 }
 
 func (h MetricGetHandler) HandleMetricGetJSON(c echo.Context) (code int, body []byte, err error) {
-	var m models.Metrics
+	var m model.Metric
 	var b []byte
 
 	code = http.StatusBadRequest
@@ -93,23 +97,21 @@ func (h MetricGetHandler) HandleMetricGetJSON(c echo.Context) (code int, body []
 	}
 	log.Debug().Msg(fmt.Sprintf("body=%s", string(b)))
 
-	code, err = models.Validate(models.ActionGet, &m)
+	code, err = model.Validate(model.ActionGet, &m)
 	if code != http.StatusOK {
 		return code, nil, err
 	}
 
-	value, exists := h.repo.Get(m.ID)
-	if !exists {
+	m2, err := h.repo.Get(m.ID)
+	if err != nil {
+		return http.StatusBadRequest, nil, err
+	}
+	if m2 == nil {
 		log.Debug().Msg(fmt.Sprintf("metric not found name=%s", m.ID))
 		return http.StatusNotFound, nil, nil
-	} else {
-		err = models.SetValue(&m, value)
-		if err != nil {
-			return http.StatusBadRequest, nil, err
-		}
 	}
 
-	err = c.JSON(http.StatusOK, &m)
+	err = c.JSON(http.StatusOK, m2)
 	if err == nil {
 		return http.StatusContinue, nil, nil
 	} else {

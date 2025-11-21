@@ -3,9 +3,11 @@ package handler
 import (
 	"net/http"
 	"testing"
+
+	"github.com/dag3322-oss/metrics/internal/repository"
 )
 
-var hg MetricGetHandler = NewMetricGetHandler(repo)
+var hg MetricGetHandler = NewMetricGetHandler(repository.NewMockRepository())
 
 func TestGetter(t *testing.T) {
 	var zeroStatus = 0

@@ -1,4 +1,4 @@
-package models
+package model
 
 import (
 	"fmt"
@@ -23,7 +23,7 @@ const (
 // Delta и Value объявлены через указатели,
 // что бы отличать значение "0", от не заданного значения
 // и соответственно не кодировать в структуру.
-type Metrics struct {
+type Metric struct {
 	ID    string   `json:"id"`
 	MType string   `json:"type"`
 	Delta *int64   `json:"delta,omitempty"`
@@ -31,7 +31,7 @@ type Metrics struct {
 	Hash  string   `json:"hash,omitempty"`
 }
 
-func FromKeyValue(m *Metrics, k string, v any) error {
+func FromKeyValue(m *Metric, k string, v any) error {
 	var err error
 
 	m.ID = k
@@ -62,7 +62,7 @@ func FromKeyValue(m *Metrics, k string, v any) error {
 	return nil
 }
 
-func ToKeyValue(m *Metrics) (k string, v any, err error) {
+func ToKeyValue(m *Metric) (k string, v any, err error) {
 	k = m.ID
 	if k == "" {
 		err = fmt.Errorf("empty metric name")
@@ -79,7 +79,7 @@ func ToKeyValue(m *Metrics) (k string, v any, err error) {
 	return k, v, err
 }
 
-func Validate(action string, m *Metrics) (code int, err error) {
+func Validate(action string, m *Metric) (code int, err error) {
 	code = http.StatusOK
 	if m.ID == "" {
 		code = http.StatusNotFound
@@ -93,7 +93,18 @@ func Validate(action string, m *Metrics) (code int, err error) {
 	return code, err
 }
 
-func SetValue(m *Metrics, value any) error {
+func (m Metric) StringValue() string {
+	switch m.MType {
+	case Gauge:
+		return fmt.Sprintf("%f", *m.Value)
+	case Counter:
+		return fmt.Sprintf("%d", *m.Delta)
+	default:
+		return ""
+	}
+}
+
+func SetValue(m *Metric, value any) error {
 	switch m.MType {
 	case Gauge:
 		f := value.(float64)

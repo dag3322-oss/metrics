@@ -22,12 +22,22 @@ import (
 	middleware "github.com/labstack/echo/v4/middleware"
 )
 
+type StorageTypeType string
+
+const (
+	StorageTypeEmpty StorageTypeType = ""
+	StorageTypeMem   StorageTypeType = "memory"
+	StorageTypeFile  StorageTypeType = "file"
+	StorageTypeDB    StorageTypeType = "db"
+)
+
 type Server struct {
 	Host                   string
 	StoreInterval          *int64
-	StoragePath            string
+	StoragePath            *string
 	LoadFromStorageOnStart *bool
 	DBConnectionString     *string
+	StorageType            StorageTypeType
 }
 
 func (s *Server) setParams(cmdArgs []string) error {
@@ -38,9 +48,10 @@ func (s *Server) setParams(cmdArgs []string) error {
 	var flagSet = flag.NewFlagSet("server", flag.ExitOnError)
 	var flagHost = flagSet.String("a", "localhost:8080", "host:port")
 	var flagStoreInterval = flagSet.Int64("i", 300, "metrics store to file interval, sec")
-	var flagStoragePath = flagSet.String("f", "./metrics.json", "metrics storage path")
+	var flagStoragePath = flagSet.String("f", "", "metrics storage path")
 	var flagLoadFromStorageOnStart = flagSet.Bool("r", false, "load metrics from storage on start")
 	var flagDBConnectionString = flagSet.String("d", "", "database connection string")
+
 	if len(cmdArgs) > 0 {
 		flagSet.Parse(cmdArgs)
 	}
@@ -67,8 +78,6 @@ func (s *Server) setParams(cmdArgs []string) error {
 		}
 	}
 
-	s.StoragePath = NotEmpty(s.StoragePath, os.Getenv("FILE_STORAGE_PATH"), *flagStoragePath)
-
 	if s.LoadFromStorageOnStart == nil {
 		lso, exists := os.LookupEnv("RESTORE")
 		if exists {
@@ -82,16 +91,44 @@ func (s *Server) setParams(cmdArgs []string) error {
 		}
 	}
 
+	if s.StoragePath == nil {
+		fs, exists := os.LookupEnv("FILE_STORAGE_PATH")
+		if exists {
+			s.StoragePath = &fs
+		} else {
+			flagSet.Visit(func(f *flag.Flag) {
+				if f.Name == "f" {
+					s.StoragePath = flagStoragePath
+					if s.StorageType == StorageTypeEmpty {
+						s.StorageType = StorageTypeFile
+						log.Debug().Msg(fmt.Sprintf("storage type set to=%s", s.StorageType))
+					}
+					return
+				}
+			})
+		}
+	}
+
 	if s.DBConnectionString == nil {
 		db, exists := os.LookupEnv("DATABASE_DSN")
 		if exists {
 			s.DBConnectionString = &db
 		} else {
-			s.DBConnectionString = flagDBConnectionString
+			flagSet.Visit(func(f *flag.Flag) {
+				if f.Name == "d" {
+					s.DBConnectionString = flagDBConnectionString
+					if s.StorageType == StorageTypeEmpty {
+						s.StorageType = StorageTypeDB
+						log.Debug().Msg(fmt.Sprintf("storage type set to=%s", s.StorageType))
+					}
+					return
+				}
+			})
 		}
 	}
-	if s.DBConnectionString == nil {
-		err = errors.New("database connection string not specified")
+
+	if s.StorageType == StorageTypeEmpty {
+		s.StorageType = StorageTypeMem
 	}
 
 	return err
@@ -104,18 +141,31 @@ func (s Server) Run(cmdArgs []string) error {
 		return err
 	}
 
-	var repo = repository.NewMemRepository()
-
 	stopChan := make(chan os.Signal, 1)
 	signal.Notify(stopChan, syscall.SIGINT, syscall.SIGTERM)
 
-	db, err := pg_pool.New(context.Background(), *s.DBConnectionString)
-	if err != nil {
-		log.Err(err).Msg("database connection error")
-		return err
+	var db *pg_pool.Pool
+	if s.DBConnectionString != nil {
+		db, err = pg_pool.New(context.Background(), *s.DBConnectionString)
+		if err != nil {
+			log.Err(err).Msg("database connection error")
+			return err
+		}
+		defer db.Close()
 	}
-	defer db.Close()
 
+	var repo repository.Metric
+	switch s.StorageType {
+	case StorageTypeDB:
+		repo = repository.NewDBRepository(db, context.Background())
+	case StorageTypeMem:
+		repo = repository.NewMemRepository()
+	case StorageTypeFile:
+		repo = repository.NewFileRepository(*s.StoragePath)
+	default:
+		return fmt.Errorf("storage type not set")
+	}
+	log.Debug().Msg(fmt.Sprintf("repository=%s", s.StorageType))
 	e := echo.New()
 
 	e.Use(middleware.Decompress())
@@ -170,14 +220,14 @@ func (s Server) Run(cmdArgs []string) error {
 	ping := e.Group("/ping")
 	ping.GET("*", hp.HandlePing)
 
-	log.Debug().Msg(fmt.Sprintf("LoadFromStorageOnStart=%t", *s.LoadFromStorageOnStart))
-	if s.LoadFromStorageOnStart != nil && *s.LoadFromStorageOnStart {
-		handlers.Load(repo, s.StoragePath)
-	}
+	//log.Debug().Msg(fmt.Sprintf("LoadFromStorageOnStart=%t", *s.LoadFromStorageOnStart))
+	//if s.LoadFromStorageOnStart != nil && *s.LoadFromStorageOnStart {
+	//	handlers.Load(repo, s.StoragePath)
+	//}
 
 	if s.StoreInterval != nil {
-		var flushTimer = time.NewTicker(time.Second * time.Duration(*s.StoreInterval))
-		go FlushEvent(flushTimer, repo, s.StoragePath)
+		//var flushTimer = time.NewTicker(time.Second * time.Duration(*s.StoreInterval))
+		//go FlushEvent(flushTimer, repo, s.StoragePath)
 	}
 
 	go func() {
@@ -186,7 +236,7 @@ func (s Server) Run(cmdArgs []string) error {
 		}
 	}()
 	<-stopChan
-	fmt.Println("Received shutdown signal. Starting graceful shutdown...")
+	log.Info().Msg("shutdown...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -200,8 +250,8 @@ func (s Server) Run(cmdArgs []string) error {
 	return err
 }
 
-func FlushEvent(tick *time.Ticker, repo repository.Repository, filePath string) {
+func FlushEvent(tick *time.Ticker, repo repository.Metric, filePath string) {
 	for range tick.C {
-		handlers.Flush(repo, filePath)
+		//handlers.Flush(repo, filePath)
 	}
 }
