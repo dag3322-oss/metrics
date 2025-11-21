@@ -29,27 +29,27 @@ func (r MetricRepositoryMem) Get(name string) (model *model.Metric, err error) {
 	}
 }
 
-func (s MetricRepositoryMem) GetAll() (m map[string]model.Metric, err error) {
-	s.mx.Lock()
-	defer s.mx.Unlock()
-	var result = make(map[string]model.Metric, len(s.metrics))
-	maps.Copy(result, s.metrics)
+func (r MetricRepositoryMem) GetAll() (m map[string]model.Metric, err error) {
+	r.mx.Lock()
+	defer r.mx.Unlock()
+	var result = make(map[string]model.Metric, len(r.metrics))
+	maps.Copy(result, r.metrics)
 	return result, nil
 }
 
-func (s MetricRepositoryMem) SetOne(m model.Metric) error {
-	s.mx.Lock()
-	defer s.mx.Unlock()
-	s.metrics[m.ID] = m
+func (r MetricRepositoryMem) SetOne(m model.Metric) error {
+	r.mx.Lock()
+	defer r.mx.Unlock()
+	r.metrics[m.ID] = m
 
 	log.Debug().Msg(fmt.Sprintf("metrics added %s", m.ID))
 	return nil
 }
 
-func (s MetricRepositoryMem) SetList(m map[string]model.Metric) error {
-	s.mx.Lock()
-	defer s.mx.Unlock()
-	maps.Copy(s.metrics, m)
+func (r MetricRepositoryMem) SetList(m map[string]model.Metric) error {
+	r.mx.Lock()
+	defer r.mx.Unlock()
+	maps.Copy(r.metrics, m)
 	log.Debug().Msg(fmt.Sprintf("Metrics saved=%d", len(m)))
 	return nil
 }

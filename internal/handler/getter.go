@@ -73,7 +73,7 @@ func (h MetricGetHandler) HandleMetricGetURL(c echo.Context) (code int, body []b
 	if m != nil {
 		c.Response().Header().Set("Content-Type", "text/html")
 		log.Debug().Msg(fmt.Sprintf("name=%s,value=%s,exists", m.ID, m.StringValue()))
-		return http.StatusOK, []byte(fmt.Sprintf("%s", m.StringValue())), nil
+		return http.StatusOK, []byte(m.StringValue()), nil
 	} else {
 		log.Debug().Msg(fmt.Sprintf("name=%s,not exists", name))
 		return http.StatusNotFound, nil, nil

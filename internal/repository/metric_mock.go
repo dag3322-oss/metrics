@@ -34,7 +34,7 @@ func (r MetricRepositoryMock) Get(name string) (model *model.Metric, err error) 
 	}
 }
 
-func (s MetricRepositoryMock) GetAll() (m map[string]model.Metric, err error) {
+func (r MetricRepositoryMock) GetAll() (m map[string]model.Metric, err error) {
 	m = make(map[string]model.Metric)
 	mm, _ := service.NameValueToModel("int64", 100500)
 	m["int64"] = *mm
@@ -43,10 +43,10 @@ func (s MetricRepositoryMock) GetAll() (m map[string]model.Metric, err error) {
 	return m, nil
 }
 
-func (s MetricRepositoryMock) SetOne(m model.Metric) error {
+func (r MetricRepositoryMock) SetOne(m model.Metric) error {
 	return nil
 }
 
-func (s MetricRepositoryMock) SetList(m map[string]model.Metric) error {
+func (r MetricRepositoryMock) SetList(m map[string]model.Metric) error {
 	return nil
 }
