@@ -96,7 +96,7 @@ func Validate(action string, m *Metric) (code int, err error) {
 func (m Metric) StringValue() string {
 	switch m.MType {
 	case Gauge:
-		return fmt.Sprintf("%d", m.Value)
+		return fmt.Sprintf("%f", *m.Value)
 	case Counter:
 		return fmt.Sprintf("%d", *m.Delta)
 	default:

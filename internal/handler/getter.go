@@ -72,7 +72,7 @@ func (h MetricGetHandler) HandleMetricGetURL(c echo.Context) (code int, body []b
 	}
 	if m != nil {
 		c.Response().Header().Set("Content-Type", "text/html")
-		log.Debug().Msg(fmt.Sprintf("name=%s,value=%s,exists", *&m.ID, m.StringValue()))
+		log.Debug().Msg(fmt.Sprintf("name=%s,value=%s,exists", m.ID, m.StringValue()))
 		return http.StatusOK, []byte(fmt.Sprintf("%s", m.StringValue())), nil
 	} else {
 		log.Debug().Msg(fmt.Sprintf("name=%s,not exists", name))
@@ -106,7 +106,7 @@ func (h MetricGetHandler) HandleMetricGetJSON(c echo.Context) (code int, body []
 	if err != nil {
 		return http.StatusBadRequest, nil, err
 	}
-	if m2 != nil {
+	if m2 == nil {
 		log.Debug().Msg(fmt.Sprintf("metric not found name=%s", m.ID))
 		return http.StatusNotFound, nil, nil
 	}

@@ -30,7 +30,7 @@ func (h MetricListHandler) HandleMetricsList(c echo.Context) error {
 		if s != "" {
 			s = s + "\n"
 		}
-		s = s + fmt.Sprint("%s %s", mm.ID, mm.StringValue())
+		s = s + fmt.Sprintf("%s %s", mm.ID, mm.StringValue())
 	}
 	c.Response().Write([]byte(s))
 	c.Response().WriteHeader(http.StatusOK)

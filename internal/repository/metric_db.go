@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 
 	"github.com/dag3322-oss/metrics/internal/model"
 	pg_pool "github.com/jackc/pgx/v5/pgxpool"
@@ -46,14 +47,69 @@ func (r MetricRepositoryDB) Get(name string) (m *model.Metric, err error) {
 	}
 }
 
-func (s MetricRepositoryDB) GetAll() (m map[string]model.Metric, err error) {
-	return nil, nil
+func (r MetricRepositoryDB) GetAll() (result map[string]model.Metric, err error) {
+	conn, err := r.pool.Acquire(r.context)
+	if err != nil {
+		return nil, err
+	}
+	row := conn.QueryRow(r.context, "select * from metrics_get(null)")
+	log.Debug().Msg(fmt.Sprintf("db row=%+v", row))
+	var b []byte
+	err = row.Scan(&b)
+	if err != nil {
+		log.Err(err).Msg("invalid row type")
+		return nil, err
+	}
+
+	var mm []model.Metric
+	err = json.Unmarshal(b, &mm)
+	if err != nil {
+		log.Err(err).Msg("json marshal exception")
+		return nil, err
+	}
+	result = make(map[string]model.Metric, len(mm))
+	for _, m := range mm {
+		result[m.ID] = m
+	}
+	return result, nil
 }
 
-func (s MetricRepositoryDB) SetOne(m model.Metric) error {
+func (r MetricRepositoryDB) SetOne(m model.Metric) error {
+	conn, err := r.pool.Acquire(r.context)
+	if err != nil {
+		return err
+	}
+	var mm []model.Metric
+	mm = append(mm, m)
+	b, err := json.Marshal(&mm)
+	if err != nil {
+		log.Err(err).Msg("json marshal exception")
+		return err
+	}
+
+	_, err = conn.Exec(r.context, "select * from metrics_set($1)", b)
+	if err != nil {
+		log.Err(err).Msg("sql set error")
+		return err
+	}
 	return nil
 }
 
-func (s MetricRepositoryDB) SetList(m map[string]model.Metric) error {
+func (r MetricRepositoryDB) SetList(m map[string]model.Metric) error {
+	conn, err := r.pool.Acquire(r.context)
+	if err != nil {
+		return err
+	}
+	b, err := json.Marshal(maps.Values(m))
+	if err != nil {
+		log.Err(err).Msg("json marshal exception")
+		return err
+	}
+
+	_, err = conn.Exec(r.context, "select * from metrics_set($1)", b)
+	if err != nil {
+		log.Err(err).Msg("sql set error")
+		return err
+	}
 	return nil
 }
