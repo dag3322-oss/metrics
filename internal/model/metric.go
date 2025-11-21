@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -89,6 +90,10 @@ func Validate(action string, m *Metric) (code int, err error) {
 		code = http.StatusBadRequest
 		err = fmt.Errorf("invalid metric type=%s", m.MType)
 	}
+	if code == http.StatusOK && action == ActionUpdate && (m.MType == Gauge && m.Value == nil || m.MType == Counter && m.Delta == nil) {
+		code = http.StatusBadRequest
+		err = fmt.Errorf("metric value not assigned name=%s, type=%s", m.ID, m.MType)
+	}
 	log.Debug().Msg(fmt.Sprintf("model validate=%+v,code=%d,err=%+v", m, code, err))
 	return code, err
 }
@@ -105,6 +110,9 @@ func (m Metric) StringValue() string {
 }
 
 func SetValue(m *Metric, value any) error {
+	if m == nil {
+		return errors.New("metric.SetValue: empty metric pointer")
+	}
 	switch m.MType {
 	case Gauge:
 		f := value.(float64)
@@ -113,7 +121,7 @@ func SetValue(m *Metric, value any) error {
 		i := value.(int64)
 		m.Delta = &i
 	default:
-		return fmt.Errorf("invalid metric type=%s", m.MType)
+		return fmt.Errorf("metric.SetValue: invalid metric type=%s", m.MType)
 	}
 	return nil
 }

@@ -166,6 +166,20 @@ func (s Server) Run(cmdArgs []string) error {
 		return fmt.Errorf("storage type not set")
 	}
 	log.Debug().Msg(fmt.Sprintf("repository=%s", s.StorageType))
+
+	var repoFlush repository.Metric
+	var flushStoragePath string
+	if s.StorageType == StorageTypeFile {
+		repoFlush = repo
+	} else {
+		if s.StoragePath != nil {
+			flushStoragePath = *s.StoragePath
+		} else {
+			flushStoragePath = "./metrics.json"
+		}
+		repoFlush = repository.NewFileRepository(flushStoragePath)
+	}
+
 	e := echo.New()
 
 	e.Use(middleware.Decompress())
@@ -220,14 +234,14 @@ func (s Server) Run(cmdArgs []string) error {
 	ping := e.Group("/ping")
 	ping.GET("*", hp.HandlePing)
 
-	//log.Debug().Msg(fmt.Sprintf("LoadFromStorageOnStart=%t", *s.LoadFromStorageOnStart))
-	//if s.LoadFromStorageOnStart != nil && *s.LoadFromStorageOnStart {
-	//	handlers.Load(repo, s.StoragePath)
-	//}
+	log.Debug().Msg(fmt.Sprintf("LoadFromStorageOnStart=%t", *s.LoadFromStorageOnStart))
+	if s.LoadFromStorageOnStart != nil && *s.LoadFromStorageOnStart {
+		handlers.Load(repo, repoFlush)
+	}
 
 	if s.StoreInterval != nil {
-		//var flushTimer = time.NewTicker(time.Second * time.Duration(*s.StoreInterval))
-		//go FlushEvent(flushTimer, repo, s.StoragePath)
+		var flushTimer = time.NewTicker(time.Second * time.Duration(*s.StoreInterval))
+		go FlushEvent(flushTimer, repo, repoFlush)
 	}
 
 	go func() {
@@ -250,8 +264,8 @@ func (s Server) Run(cmdArgs []string) error {
 	return err
 }
 
-func FlushEvent(tick *time.Ticker, repo repository.Metric, filePath string) {
+func FlushEvent(tick *time.Ticker, repo repository.Metric, repoFlush repository.Metric) {
 	for range tick.C {
-		//handlers.Flush(repo, filePath)
+		handlers.Flush(repo, repoFlush)
 	}
 }

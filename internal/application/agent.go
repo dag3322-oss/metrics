@@ -252,5 +252,5 @@ func setMetric(repo repository.Metric, name string, value any) {
 		return
 	}
 	log.Debug().Msg(fmt.Sprintf("setMetric model=%+v", *m))
-	err = repo.SetOne(*m)
+	repo.SetOne(*m)
 }
