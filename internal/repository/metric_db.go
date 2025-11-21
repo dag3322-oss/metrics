@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"maps"
 
 	"github.com/dag3322-oss/metrics/internal/model"
 	pg_pool "github.com/jackc/pgx/v5/pgxpool"
@@ -100,7 +99,13 @@ func (r MetricRepositoryDB) SetList(m map[string]model.Metric) error {
 	if err != nil {
 		return err
 	}
-	b, err := json.Marshal(maps.Values(m))
+
+	var a []model.Metric
+	for _, item := range m {
+		a = append(a, item)
+	}
+
+	b, err := json.Marshal(&a)
 	if err != nil {
 		log.Err(err).Msg("json marshal exception")
 		return err
