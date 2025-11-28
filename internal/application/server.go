@@ -170,7 +170,7 @@ func (s Server) Run(cmdArgs []string) error {
 	case StorageTypeMem:
 		repo = repository.NewMemRepository()
 	case StorageTypeFile:
-		repo = repository.NewFileRepository(*s.StoragePath)
+		repo = repository.NewFileRepository(*s.StoragePath, false)
 	default:
 		return fmt.Errorf("storage type not set")
 	}
@@ -184,7 +184,7 @@ func (s Server) Run(cmdArgs []string) error {
 		} else {
 			flushStoragePath = "./metrics.json"
 		}
-		repoFlush = repository.NewFileRepository(flushStoragePath)
+		repoFlush = repository.NewFileRepository(flushStoragePath, true)
 	}
 
 	e := echo.New()

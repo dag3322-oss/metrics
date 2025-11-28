@@ -14,10 +14,11 @@ import (
 type MetricRepositoryFile struct {
 	mx       *sync.Mutex
 	fileName string
+	isFlush  bool
 }
 
-func NewFileRepository(fileName string) MetricRepositoryFile {
-	return MetricRepositoryFile{mx: &sync.Mutex{}, fileName: fileName}
+func NewFileRepository(fileName string, isFlush bool) MetricRepositoryFile {
+	return MetricRepositoryFile{mx: &sync.Mutex{}, fileName: fileName, isFlush: isFlush}
 }
 
 func (r MetricRepositoryFile) Get(name string) (*model.Metric, error) {
@@ -77,7 +78,7 @@ func (r MetricRepositoryFile) SetOne(m model.Metric) error {
 		return err
 	}
 
-	if metricSaved, ok := met[m.ID]; ok && m.MType == model.Counter && metricSaved.Delta != nil {
+	if metricSaved, ok := met[m.ID]; !r.isFlush && ok && m.MType == model.Counter && metricSaved.Delta != nil {
 		*m.Delta = *m.Delta + *metricSaved.Delta
 	}
 	met[m.ID] = m
@@ -112,7 +113,7 @@ func (r MetricRepositoryFile) SetList(m map[string]model.Metric) error {
 	}
 
 	for _, metricToSave := range m {
-		if metricSaved, ok := met[metricToSave.ID]; ok && metricToSave.MType == model.Counter && metricSaved.Delta != nil {
+		if metricSaved, ok := met[metricToSave.ID]; !r.isFlush && ok && metricToSave.MType == model.Counter && metricSaved.Delta != nil {
 			*metricToSave.Delta = *metricToSave.Delta + *metricSaved.Delta
 		}
 		met[metricToSave.ID] = metricToSave
