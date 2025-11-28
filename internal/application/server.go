@@ -29,10 +29,9 @@ import (
 type StorageTypeType string
 
 const (
-	StorageTypeEmpty StorageTypeType = ""
-	StorageTypeMem   StorageTypeType = "memory"
-	StorageTypeFile  StorageTypeType = "file"
-	StorageTypeDB    StorageTypeType = "db"
+	StorageTypeMem  StorageTypeType = "memory"
+	StorageTypeFile StorageTypeType = "file"
+	StorageTypeDB   StorageTypeType = "db"
 )
 
 type Server struct {
@@ -117,10 +116,6 @@ func (s *Server) setParams(cmdArgs []string) error {
 			flagSet.Visit(func(f *flag.Flag) {
 				if f.Name == "f" {
 					s.StoragePath = flagStoragePath
-					if s.StorageType == StorageTypeEmpty {
-						s.StorageType = StorageTypeFile
-						log.Debug().Msg(fmt.Sprintf("storage type set to=%s", s.StorageType))
-					}
 					return
 				}
 			})
@@ -136,17 +131,17 @@ func (s *Server) setParams(cmdArgs []string) error {
 				if f.Name == "d" {
 					s.DBConnectionString = flagDBConnectionString
 					log.Debug().Msg(fmt.Sprintf("flagDBConnectionString=%s", *flagDBConnectionString))
-					if s.StorageType == StorageTypeEmpty {
-						s.StorageType = StorageTypeDB
-						log.Debug().Msg(fmt.Sprintf("storage type set to=%s", s.StorageType))
-					}
 					return
 				}
 			})
 		}
 	}
 
-	if s.StorageType == StorageTypeEmpty {
+	if s.DBConnectionString != nil {
+		s.StorageType = StorageTypeDB
+	} else if s.StoragePath != nil {
+		s.StorageType = StorageTypeFile
+	} else {
 		s.StorageType = StorageTypeMem
 	}
 
