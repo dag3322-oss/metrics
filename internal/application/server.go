@@ -82,6 +82,10 @@ func (s *Server) setParams(cmdArgs []string) error {
 			})
 		}
 	}
+	if s.StoreInterval == nil {
+		i := int64(300)
+		s.StoreInterval = &i
+	}
 
 	if s.LoadFromStorageOnStart == nil {
 		lso, exists := os.LookupEnv("RESTORE")
@@ -174,9 +178,7 @@ func (s Server) Run(cmdArgs []string) error {
 
 	var repoFlush repository.Metric
 	var flushStoragePath string
-	if s.StorageType == StorageTypeFile {
-		repoFlush = repo
-	} else {
+	if s.StorageType != StorageTypeFile {
 		if s.StoragePath != nil {
 			flushStoragePath = *s.StoragePath
 		} else {
@@ -235,11 +237,11 @@ func (s Server) Run(cmdArgs []string) error {
 	ping.GET("*", hp.HandlePing)
 
 	log.Debug().Msg(fmt.Sprintf("LoadFromStorageOnStart=%t", *s.LoadFromStorageOnStart))
-	if s.LoadFromStorageOnStart != nil && *s.LoadFromStorageOnStart {
+	if s.StorageType != StorageTypeFile && s.LoadFromStorageOnStart != nil && *s.LoadFromStorageOnStart {
 		handlers.Load(repo, repoFlush)
 	}
 
-	if s.StoreInterval != nil {
+	if s.StorageType != StorageTypeFile && s.StoreInterval != nil {
 		var flushTimer = time.NewTicker(time.Second * time.Duration(*s.StoreInterval))
 		go FlushEvent(flushTimer, repo, repoFlush)
 	}

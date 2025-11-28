@@ -13,7 +13,7 @@ func Flush(repo repository.Metric, repoFile repository.Metric) error {
 }
 
 func Load(repo repository.Metric, repoFile repository.Metric) error {
-	m, err := repo.GetAll()
+	m, err := repoFile.GetAll()
 	if err == nil {
 		err = repo.SetList(m)
 	}
