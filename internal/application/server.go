@@ -46,6 +46,11 @@ type Server struct {
 
 func (s *Server) setParams(cmdArgs []string) error {
 	var err error
+
+	for _, s := range os.Environ() {
+		log.Debug().Msg(fmt.Sprintf("OS_%s", s))
+	}
+
 	if cmdArgs == nil {
 		cmdArgs = os.Args[1:]
 	}
@@ -130,6 +135,7 @@ func (s *Server) setParams(cmdArgs []string) error {
 			flagSet.Visit(func(f *flag.Flag) {
 				if f.Name == "d" {
 					s.DBConnectionString = flagDBConnectionString
+					log.Debug().Msg(fmt.Sprintf("flagDBConnectionString=%s", *flagDBConnectionString))
 					if s.StorageType == StorageTypeEmpty {
 						s.StorageType = StorageTypeDB
 						log.Debug().Msg(fmt.Sprintf("storage type set to=%s", s.StorageType))
