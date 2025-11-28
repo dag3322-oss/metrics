@@ -39,21 +39,3 @@ func NameValueToModel(name string, value any) (m *model.Metric, err error) {
 	}
 	return m, nil
 }
-
-func UpdateMetricValue(dst *model.Metric, src *model.Metric) error {
-	if src == nil {
-		return errors.New("UpdateMetric src pointer is empty")
-	}
-	if dst != nil {
-		if src.MType != dst.MType {
-			return errors.New("cannot change metric`s type")
-		}
-		switch src.MType {
-		case model.Gauge:
-			*dst.Value = *src.Value
-		case model.Counter:
-			*dst.Delta = *dst.Delta + *src.Delta
-		}
-	}
-	return nil
-}

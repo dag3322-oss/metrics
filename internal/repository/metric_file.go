@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"github.com/dag3322-oss/metrics/internal/model"
-	"github.com/dag3322-oss/metrics/internal/service"
 	"github.com/rs/zerolog/log"
 )
 
@@ -78,16 +77,10 @@ func (r MetricRepositoryFile) SetOne(m model.Metric) error {
 		return err
 	}
 
-	item, ok := met[m.ID]
-	if ok {
-		err := service.UpdateMetricValue(&item, &m)
-		if err != nil {
-			log.Err(err).Msg("SetOne: UpdateMetricValue")
-			return err
-		}
-	} else {
-		met[m.ID] = m
+	if metricSaved, ok := met[m.ID]; ok && m.MType == model.Counter && metricSaved.Delta != nil {
+		*m.Delta = *m.Delta + *metricSaved.Delta
 	}
+	met[m.ID] = m
 
 	var a []model.Metric
 	for _, item := range met {
@@ -118,17 +111,11 @@ func (r MetricRepositoryFile) SetList(m map[string]model.Metric) error {
 		return err
 	}
 
-	for _, itemSrc := range m {
-		itemDst, ok := met[itemSrc.ID]
-		if ok {
-			err := service.UpdateMetricValue(&itemDst, &itemSrc)
-			if err != nil {
-				log.Err(err).Msg("SetOne: UpdateMetricValue")
-				return err
-			}
-		} else {
-			met[itemSrc.ID] = itemSrc
+	for _, metricToSave := range m {
+		if metricSaved, ok := met[metricToSave.ID]; ok && metricToSave.MType == model.Counter && metricSaved.Delta != nil {
+			*metricToSave.Delta = *metricToSave.Delta + *metricSaved.Delta
 		}
+		met[metricToSave.ID] = metricToSave
 	}
 
 	var a []model.Metric
