@@ -16,7 +16,7 @@ func TestMetricMemo(t *testing.T) {
 func TestMetricFile(t *testing.T) {
 	fileName := "./metrics.json"
 	os.Remove(fileName)
-	test(t, NewFileRepository(fileName))
+	test(t, NewFileRepository(fileName, false))
 }
 
 func test(t *testing.T, repo Metric) {
