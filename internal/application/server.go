@@ -13,10 +13,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/rs/zerolog/log"
 
 	handlers "github.com/dag3322-oss/metrics/internal/handler"
 	repository "github.com/dag3322-oss/metrics/internal/repository"
+	"github.com/dag3322-oss/metrics/migrations"
 	pg_pool "github.com/jackc/pgx/v5/pgxpool"
 	echo "github.com/labstack/echo/v4"
 	middleware "github.com/labstack/echo/v4/middleware"
@@ -167,6 +171,28 @@ func (s Server) Run(cmdArgs []string) error {
 	switch s.StorageType {
 	case StorageTypeDB:
 		repo = repository.NewDBRepository(db, context.Background())
+
+		log.Debug().Msg("Database migrations will be applied")
+		driver, err := iofs.New(migrations.FS, "sql")
+		if err != nil {
+			log.Err(err).Msg("iofs driver creation")
+			return err
+		}
+		log.Debug().Msg("iofs driver created")
+
+		m, err := migrate.NewWithSourceInstance("iofs", driver, *s.DBConnectionString)
+		if err != nil {
+			log.Err(err).Msg("migration instance creation")
+			return err
+		}
+		log.Debug().Msg("migration isnstance created")
+
+		log.Err(err)
+		if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+			log.Err(err)
+			return err
+		}
+		log.Debug().Msg("Database migrations applied succesfully")
 	case StorageTypeMem:
 		repo = repository.NewMemRepository()
 	case StorageTypeFile:
