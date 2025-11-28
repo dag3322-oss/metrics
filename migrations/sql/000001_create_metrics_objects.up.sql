@@ -15,6 +15,6 @@ begin
 	insert into metric(id, "type", delta, "value", hash) select id, "type", delta, "value", hash from a
 	on conflict (id) do update set 
 		delta = excluded.delta, 
-		"value" = case when a."type" = 'counter' then coalesce(metric.value, 0) + excluded."value" else excluded."value" end, 
+		"value" = case when excluded."type" = 'counter' then coalesce(metric.value, 0) + excluded."value" else excluded."value" end, 
 		hash = excluded.hash;   
 end $$;
