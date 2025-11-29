@@ -187,7 +187,7 @@ func SendEvent(tick *time.Ticker, repo repository.Metric, httpc http.Client, hos
 	for range tick.C {
 		var err = SendBatch(repo, httpc, host)
 		if err != nil {
-			log.Err(err).Msg(fmt.Sprintf("err=%+w", err))
+			log.Err(err).Msg("SendBatch")
 		}
 	}
 }
