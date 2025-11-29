@@ -3,7 +3,11 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
+	"reflect"
+	"time"
 
 	"github.com/dag3322-oss/metrics/internal/model"
 	pg_pool "github.com/jackc/pgx/v5/pgxpool"
@@ -19,8 +23,37 @@ func NewDBRepository(pool *pg_pool.Pool, context context.Context) MetricReposito
 	return MetricRepositoryDB{pool: pool, context: context}
 }
 
+func (r MetricRepositoryDB) acquire() (conn *pg_pool.Conn, err error) {
+	i := 0
+	for {
+		time.Sleep(time.Duration(i) * time.Second)
+		conn, err = r.pool.Acquire(r.context)
+		if err != nil {
+			var ne net.Error
+			if errors.As(err, &ne) {
+				switch i {
+				case 0:
+					i = 1
+				default:
+					i = i + 2
+				}
+				if i <= 5 {
+					log.Debug().Msg(fmt.Sprintf("repeat after timeout delay=%d", i))
+					continue
+				}
+			} else {
+				log.Debug().Msg(fmt.Sprintf("not network error=%+v,%s", err, reflect.TypeOf(err).Name()))
+			}
+			log.Err(err).Msg("request send exception")
+			return nil, err
+		}
+		return conn, nil
+	}
+
+}
+
 func (r MetricRepositoryDB) Get(name string) (m *model.Metric, err error) {
-	conn, err := r.pool.Acquire(r.context)
+	conn, err := r.acquire()
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +81,7 @@ func (r MetricRepositoryDB) Get(name string) (m *model.Metric, err error) {
 }
 
 func (r MetricRepositoryDB) GetAll() (result map[string]model.Metric, err error) {
-	conn, err := r.pool.Acquire(r.context)
+	conn, err := r.acquire()
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +109,7 @@ func (r MetricRepositoryDB) GetAll() (result map[string]model.Metric, err error)
 }
 
 func (r MetricRepositoryDB) SetOne(m model.Metric) error {
-	conn, err := r.pool.Acquire(r.context)
+	conn, err := r.acquire()
 	if err != nil {
 		return err
 	}
@@ -98,7 +131,7 @@ func (r MetricRepositoryDB) SetOne(m model.Metric) error {
 }
 
 func (r MetricRepositoryDB) SetList(m map[string]model.Metric) error {
-	conn, err := r.pool.Acquire(r.context)
+	conn, err := r.acquire()
 	if err != nil {
 		return err
 	}

@@ -187,9 +187,39 @@ func SendEvent(tick *time.Ticker, repo repository.Metric, httpc http.Client, hos
 	for range tick.C {
 		var err = SendBatch(repo, httpc, host)
 		if err != nil {
-			log.Err(err).Msg("")
+			log.Err(err).Msg(fmt.Sprintf("err=%+w", err))
 		}
 	}
+}
+
+func httpDo(req *http.Request) (resp *http.Response, err error) {
+	client := &http.Client{}
+	client.Timeout = 30 * time.Second
+	i := 0
+	for {
+		time.Sleep(time.Duration(i) * time.Second)
+		resp, err = client.Do(req)
+		if err != nil {
+			if _, ok := err.(net.Error); ok {
+				switch i {
+				case 0:
+					i = 1
+				default:
+					i = i + 2
+				}
+				if i <= 5 {
+					log.Debug().Msg(fmt.Sprintf("repeat after timeout delay=%d", i))
+					continue
+				}
+			} else {
+				log.Debug().Msg("not network error")
+			}
+			log.Err(err).Msg("request send exception")
+			return nil, err
+		}
+		return resp, nil
+	}
+
 }
 
 func Send(repo repository.Metric, httpc http.Client, host string) error {
@@ -225,9 +255,7 @@ func Send(repo repository.Metric, httpc http.Client, host string) error {
 		req.Header.Set("Accept-Encoding", "gzip")
 		req.Header.Add(echo.HeaderVary, echo.HeaderAcceptEncoding)
 		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-		client := &http.Client{}
-		client.Timeout = 30 * time.Second
-		resp, err := client.Do(req)
+		resp, err := httpDo(req)
 		if err != nil {
 			log.Err(err).Msg("request send exception")
 			return err
@@ -283,9 +311,7 @@ func SendBatch(repo repository.Metric, httpc http.Client, host string) error {
 	req.Header.Set("Accept-Encoding", "gzip")
 	req.Header.Add(echo.HeaderVary, echo.HeaderAcceptEncoding)
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-	client := &http.Client{}
-	client.Timeout = 30 * time.Second
-	resp, err := client.Do(req)
+	resp, err := httpDo(req)
 	if err != nil {
 		log.Err(err).Msg("request send exception")
 		return err
