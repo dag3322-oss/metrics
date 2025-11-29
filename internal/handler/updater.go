@@ -111,7 +111,7 @@ func (h MetricUpdateHandler) HandleMetricUpdateJSON(c echo.Context) (code int, b
 func (h MetricUpdateHandler) HandleMetricsUpdateJSON(c echo.Context) (code int, body []byte, err error) {
 	var m []model.Metric
 	var b []byte
-	var mm map[string]model.Metric = make(map[string]model.Metric)
+	var mm = make(map[string]model.Metric)
 
 	code = http.StatusBadRequest
 
@@ -130,6 +130,9 @@ func (h MetricUpdateHandler) HandleMetricsUpdateJSON(c echo.Context) (code int, 
 		code, err = model.Validate(model.ActionUpdate, &item)
 		if code != http.StatusOK {
 			return code, nil, err
+		}
+		if itemSaved, ok := mm[item.ID]; ok && item.MType == model.Counter && itemSaved.Delta != nil {
+			*item.Delta = *item.Delta + *itemSaved.Delta
 		}
 		mm[item.ID] = item
 	}
