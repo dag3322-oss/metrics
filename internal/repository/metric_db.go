@@ -24,6 +24,7 @@ func (r MetricRepositoryDB) Get(name string) (m *model.Metric, err error) {
 	if err != nil {
 		return nil, err
 	}
+	defer conn.Release()
 	row := conn.QueryRow(r.context, "select * from metrics_get($1)", fmt.Sprintf("{\"id\": \"%s\"}", name))
 	log.Debug().Msg(fmt.Sprintf("db row=%+v", row))
 	var b []byte
@@ -51,6 +52,7 @@ func (r MetricRepositoryDB) GetAll() (result map[string]model.Metric, err error)
 	if err != nil {
 		return nil, err
 	}
+	defer conn.Release()
 	row := conn.QueryRow(r.context, "select * from metrics_get(null)")
 	log.Debug().Msg(fmt.Sprintf("db row=%+v", row))
 	var b []byte
@@ -78,6 +80,7 @@ func (r MetricRepositoryDB) SetOne(m model.Metric) error {
 	if err != nil {
 		return err
 	}
+	defer conn.Release()
 	var mm []model.Metric
 	mm = append(mm, m)
 	b, err := json.Marshal(&mm)
@@ -99,6 +102,7 @@ func (r MetricRepositoryDB) SetList(m map[string]model.Metric) error {
 	if err != nil {
 		return err
 	}
+	defer conn.Release()
 
 	var a []model.Metric
 	for _, item := range m {

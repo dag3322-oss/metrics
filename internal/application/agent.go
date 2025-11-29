@@ -20,6 +20,7 @@ import (
 
 	"encoding/json"
 
+	"github.com/dag3322-oss/metrics/internal/model"
 	"github.com/dag3322-oss/metrics/internal/repository"
 	"github.com/dag3322-oss/metrics/internal/service"
 	echo "github.com/labstack/echo/v4"
@@ -184,7 +185,7 @@ func Collect(t time.Time, repo repository.Metric) error {
 
 func SendEvent(tick *time.Ticker, repo repository.Metric, httpc http.Client, host string) {
 	for range tick.C {
-		var err = Send(repo, httpc, host)
+		var err = SendBatch(repo, httpc, host)
 		if err != nil {
 			log.Err(err).Msg("")
 		}
@@ -240,6 +241,64 @@ func Send(repo repository.Metric, httpc http.Client, host string) error {
 		}
 		defer resp.Body.Close()
 	}
+	log.Debug().Msg("metrics sended")
+	setMetric(repo, "PollCount", int64(0))
+	return nil
+}
+
+func SendBatch(repo repository.Metric, httpc http.Client, host string) error {
+	var err error
+	mm, err := repo.GetAll()
+	if err != nil {
+		log.Err(err).Msg("mem repository exception")
+		return err
+	}
+	var a []model.Metric
+	for _, m := range mm {
+		a = append(a, m)
+	}
+
+	var b []byte
+	b, err = json.Marshal(&a)
+	if err != nil {
+		log.Err(err).Msg("json marshal exception")
+		return err
+	}
+
+	var buf bytes.Buffer
+	gzWriter := gzip.NewWriter(&buf)
+	_, err = gzWriter.Write(b)
+	if err != nil {
+		log.Err(err).Msg("zip exception")
+		return err
+	}
+	gzWriter.Close()
+
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/updates", host), &buf)
+	if err != nil {
+		log.Err(err).Msg("request create exception")
+		return err
+	}
+	req.Header.Set(echo.HeaderContentEncoding, "gzip")
+	req.Header.Set("Accept-Encoding", "gzip")
+	req.Header.Add(echo.HeaderVary, echo.HeaderAcceptEncoding)
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	client := &http.Client{}
+	client.Timeout = 30 * time.Second
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Err(err).Msg("request send exception")
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		err = fmt.Errorf("HTTP status code = %d", resp.StatusCode)
+		log.Err(err).Msg("")
+		return err
+	}
+	defer resp.Body.Close()
+
 	log.Debug().Msg("metrics sended")
 	setMetric(repo, "PollCount", int64(0))
 	return nil

@@ -159,12 +159,21 @@ func (s Server) Run(cmdArgs []string) error {
 	signal.Notify(stopChan, syscall.SIGINT, syscall.SIGTERM)
 
 	var db *pg_pool.Pool
+
 	if s.DBConnectionString != nil {
-		db, err = pg_pool.New(context.Background(), *s.DBConnectionString)
+		config, err := pg_pool.ParseConfig(*s.DBConnectionString)
+		if err != nil {
+			log.Err(err).Msg("database config parsing")
+			return err
+		}
+		config.MaxConns = 10
+		config.MaxConnLifetime = 30 * time.Second
+		db, err = pg_pool.NewWithConfig(context.Background(), config)
 		if err != nil {
 			log.Err(err).Msg("database connection error")
 			return err
 		}
+
 		defer db.Close()
 	}
 
@@ -186,6 +195,7 @@ func (s Server) Run(cmdArgs []string) error {
 			log.Err(err).Msg("migration instance creation")
 			return err
 		}
+		defer m.Close()
 		log.Debug().Msg("migration isnstance created")
 
 		log.Err(err)
@@ -249,6 +259,9 @@ func (s Server) Run(cmdArgs []string) error {
 	updates := e.Group("/update")
 	updates.GET("*", hu.HandleMetricUpdate)
 	updates.POST("*", hu.HandleMetricUpdate)
+
+	batchUpdates := e.Group("/updates")
+	batchUpdates.POST("*", hu.HandleMetricsUpdate)
 
 	hl := handlers.NewMetricListHandler(repo)
 	lists := e.Group("/")
