@@ -10,6 +10,9 @@ import (
 	"time"
 
 	"github.com/dag3322-oss/metrics/internal/model"
+	"github.com/dag3322-oss/metrics/migrations"
+	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	pg_pool "github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 )
@@ -19,8 +22,41 @@ type MetricRepositoryDB struct {
 	pool    *pg_pool.Pool
 }
 
-func NewDBRepository(pool *pg_pool.Pool, context context.Context) MetricRepositoryDB {
-	return MetricRepositoryDB{pool: pool, context: context}
+func NewDBRepository(connectionString *string, context context.Context) (repo *MetricRepositoryDB, err error) {
+	var pool *pg_pool.Pool
+
+	config, err := pg_pool.ParseConfig(*connectionString)
+	if err != nil {
+		return nil, err
+	}
+	config.MaxConns = 10
+	config.MaxConnLifetime = 30 * time.Second
+	pool, err = pg_pool.NewWithConfig(context, config)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Debug().Msg("Database migrations will be applied")
+	driver, err := iofs.New(migrations.FS, "sql")
+	if err != nil {
+		return nil, err
+	}
+	log.Debug().Msg("iofs driver created")
+
+	m, err := migrate.NewWithSourceInstance("iofs", driver, *connectionString)
+	if err != nil {
+		return nil, err
+	}
+	defer m.Close()
+	log.Debug().Msg("migration isnstance created")
+
+	log.Err(err)
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		return nil, err
+	}
+	log.Debug().Msg("Database migrations applied succesfully")
+
+	return &MetricRepositoryDB{pool: pool, context: context}, nil
 }
 
 func (r MetricRepositoryDB) acquire() (conn *pg_pool.Conn, err error) {
@@ -59,7 +95,7 @@ func (r MetricRepositoryDB) Get(name string) (m *model.Metric, err error) {
 	}
 	defer conn.Release()
 	row := conn.QueryRow(r.context, "select * from metrics_get($1)", fmt.Sprintf("{\"id\": \"%s\"}", name))
-	log.Debug().Msg(fmt.Sprintf("db row=%+v", row))
+	log.Debug().Any("row", row).Msg("")
 	var b []byte
 	err = row.Scan(&b)
 	if err != nil {
@@ -154,4 +190,12 @@ func (r MetricRepositoryDB) SetList(m map[string]model.Metric) error {
 		return err
 	}
 	return nil
+}
+
+func (r MetricRepositoryDB) Close() {
+	r.pool.Close()
+}
+
+func (r MetricRepositoryDB) Ping() error {
+	return r.pool.Ping(r.context)
 }

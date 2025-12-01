@@ -3,17 +3,17 @@ package handler
 import (
 	"net/http"
 
-	pg_pool "github.com/jackc/pgx/v5/pgxpool"
+	"github.com/dag3322-oss/metrics/internal/repository"
 	echo "github.com/labstack/echo/v4"
 	"github.com/rs/zerolog/log"
 )
 
 type DBPingHandler struct {
-	db *pg_pool.Pool
+	db *repository.MetricRepositoryDB
 }
 
 func NewDBPingHandler(
-	db *pg_pool.Pool,
+	db *repository.MetricRepositoryDB,
 ) DBPingHandler {
 	return DBPingHandler{db: db}
 }
@@ -23,7 +23,7 @@ func (h DBPingHandler) HandlePing(c echo.Context) error {
 	if h.db == nil {
 		c.Response().WriteHeader(http.StatusInternalServerError)
 	} else {
-		err := h.db.Ping(c.Request().Context())
+		err := h.db.Ping()
 		if err == nil {
 			c.Response().WriteHeader(http.StatusOK)
 		} else {

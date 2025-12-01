@@ -10,21 +10,18 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"syscall"
 	"time"
 
-	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/rs/zerolog/log"
 
 	handlers "github.com/dag3322-oss/metrics/internal/handler"
 	repository "github.com/dag3322-oss/metrics/internal/repository"
-	"github.com/dag3322-oss/metrics/migrations"
-	pg_pool "github.com/jackc/pgx/v5/pgxpool"
 	echo "github.com/labstack/echo/v4"
 	middleware "github.com/labstack/echo/v4/middleware"
 )
+
+var serverReady = make(chan struct{})
 
 type StorageTypeType string
 
@@ -63,15 +60,14 @@ func (s *Server) setParams(cmdArgs []string) error {
 	if len(cmdArgs) > 0 {
 		flagSet.Parse(cmdArgs)
 	}
-	log.Debug().Msg(fmt.Sprintf("before assign s.host=%s,os.host=%s,flag.host=%s", s.Host, os.Getenv("ADDRESS"), *flagHost))
+	log.Debug().Str("s.host", s.Host).Str("os.host", os.Getenv("ADDRESS")).Str("flag.host", *flagHost).Msg("before assign")
 
 	s.Host = NotEmpty(s.Host, os.Getenv("ADDRESS"), *flagHost)
-	log.Debug().Msg(fmt.Sprintf("after assign s.host=%s", s.Host))
+	log.Debug().Str("s.host", s.Host).Msg("after assign")
 	_, _, err = net.SplitHostPort(s.Host)
 	if err != nil {
 		return err
 	}
-	log.Debug().Msg(fmt.Sprintf("host=%s", s.Host))
 
 	if s.StoreInterval == nil {
 		se, exists := os.LookupEnv("STORE_INTERVAL")
@@ -130,7 +126,7 @@ func (s *Server) setParams(cmdArgs []string) error {
 			flagSet.Visit(func(f *flag.Flag) {
 				if f.Name == "d" {
 					s.DBConnectionString = flagDBConnectionString
-					log.Debug().Msg(fmt.Sprintf("flagDBConnectionString=%s", *flagDBConnectionString))
+					log.Debug().Str("flagDBConnectionString", *flagDBConnectionString).Msg("")
 					return
 				}
 			})
@@ -155,55 +151,17 @@ func (s Server) Run(cmdArgs []string) error {
 		return err
 	}
 
-	stopChan := make(chan os.Signal, 1)
-	signal.Notify(stopChan, syscall.SIGINT, syscall.SIGTERM)
-
-	var db *pg_pool.Pool
-
-	if s.DBConnectionString != nil {
-		config, err := pg_pool.ParseConfig(*s.DBConnectionString)
-		if err != nil {
-			log.Err(err).Msg("database config parsing")
-			return err
-		}
-		config.MaxConns = 10
-		config.MaxConnLifetime = 30 * time.Second
-		db, err = pg_pool.NewWithConfig(context.Background(), config)
-		if err != nil {
-			log.Err(err).Msg("database connection error")
-			return err
-		}
-
-		defer db.Close()
-	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
 
 	var repo repository.Metric
 	switch s.StorageType {
 	case StorageTypeDB:
-		repo = repository.NewDBRepository(db, context.Background())
-
-		log.Debug().Msg("Database migrations will be applied")
-		driver, err := iofs.New(migrations.FS, "sql")
+		repo, err = repository.NewDBRepository(s.DBConnectionString, context.Background())
 		if err != nil {
-			log.Err(err).Msg("iofs driver creation")
+			log.Err(err).Msg("database initialization")
 			return err
 		}
-		log.Debug().Msg("iofs driver created")
-
-		m, err := migrate.NewWithSourceInstance("iofs", driver, *s.DBConnectionString)
-		if err != nil {
-			log.Err(err).Msg("migration instance creation")
-			return err
-		}
-		defer m.Close()
-		log.Debug().Msg("migration isnstance created")
-
-		log.Err(err)
-		if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-			log.Err(err)
-			return err
-		}
-		log.Debug().Msg("Database migrations applied succesfully")
 	case StorageTypeMem:
 		repo = repository.NewMemRepository()
 	case StorageTypeFile:
@@ -211,7 +169,8 @@ func (s Server) Run(cmdArgs []string) error {
 	default:
 		return fmt.Errorf("storage type not set")
 	}
-	log.Debug().Msg(fmt.Sprintf("repository=%s", s.StorageType))
+	defer repo.Close()
+	log.Debug().Any("repository", s.StorageType).Msg("")
 
 	var repoFlush repository.Metric
 	var flushStoragePath string
@@ -272,11 +231,16 @@ func (s Server) Run(cmdArgs []string) error {
 	values.GET("*", hg.HandleMetricGet)
 	values.POST("*", hg.HandleMetricGet)
 
-	hp := handlers.NewDBPingHandler(db)
+	var hp handlers.DBPingHandler
+	if s.StorageType == StorageTypeDB {
+		hp = handlers.NewDBPingHandler(repo.(*repository.MetricRepositoryDB))
+	} else {
+		hp = handlers.NewDBPingHandler(nil)
+	}
 	ping := e.Group("/ping")
 	ping.GET("*", hp.HandlePing)
 
-	log.Debug().Msg(fmt.Sprintf("LoadFromStorageOnStart=%t", *s.LoadFromStorageOnStart))
+	log.Debug().Bool("LoadFromStorageOnStart", *s.LoadFromStorageOnStart).Msg("")
 	if s.StorageType != StorageTypeFile && s.LoadFromStorageOnStart != nil && *s.LoadFromStorageOnStart {
 		handlers.Load(repo, repoFlush)
 	}
@@ -291,18 +255,17 @@ func (s Server) Run(cmdArgs []string) error {
 			log.Err(err).Msg("failed to start server")
 		}
 	}()
-	<-stopChan
-	log.Info().Msg("shutdown...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	err = e.Shutdown(ctx)
-	if err != nil {
-		os.Exit(1)
+	select {
+	case <-serverReady:
+		fmt.Println("ready")
+	case <-ctx.Done():
+		log.Info().Msg("shutdown...")
+		e.Shutdown(ctx)
+		repo.Close()
+		stop()
 	}
 
-	os.Exit(0)
 	return err
 }
 

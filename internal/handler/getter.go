@@ -72,10 +72,10 @@ func (h MetricGetHandler) HandleMetricGetURL(c echo.Context) (code int, body []b
 	}
 	if m != nil {
 		c.Response().Header().Set("Content-Type", "text/html")
-		log.Debug().Msg(fmt.Sprintf("name=%s,value=%s,exists", m.ID, m.StringValue()))
+		log.Debug().Str("name", m.ID).Str("value", m.StringValue()).Msg("exists")
 		return http.StatusOK, []byte(m.StringValue()), nil
 	} else {
-		log.Debug().Msg(fmt.Sprintf("name=%s,not exists", name))
+		log.Debug().Str("name", name).Msg("not exists")
 		return http.StatusNotFound, nil, nil
 	}
 }
@@ -95,7 +95,7 @@ func (h MetricGetHandler) HandleMetricGetJSON(c echo.Context) (code int, body []
 	if err != nil {
 		return http.StatusBadRequest, nil, err
 	}
-	log.Debug().Msg(fmt.Sprintf("body=%s", string(b)))
+	log.Debug().RawJSON("", b).Msg("body")
 
 	code, err = model.Validate(model.ActionGet, &m)
 	if code != http.StatusOK {
@@ -107,7 +107,7 @@ func (h MetricGetHandler) HandleMetricGetJSON(c echo.Context) (code int, body []
 		return http.StatusBadRequest, nil, err
 	}
 	if m2 == nil {
-		log.Debug().Msg(fmt.Sprintf("metric not found name=%s", m.ID))
+		log.Debug().Str("name", m.ID).Msg("metric not found")
 		return http.StatusNotFound, nil, nil
 	}
 

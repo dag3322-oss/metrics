@@ -41,6 +41,7 @@ func TItem(t *testing.T, h echo.HandlerFunc, _url string, w ResponseWriterMock, 
 func BuildRequest(urlString string) (*http.Request, error) {
 	var err error
 	urlRef, err := url.Parse(urlString)
+	strings.Split(urlRef.Path, "/")
 	return &http.Request{URL: urlRef}, err
 }
 

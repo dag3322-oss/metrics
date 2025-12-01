@@ -94,7 +94,7 @@ func Validate(action string, m *Metric) (code int, err error) {
 		code = http.StatusBadRequest
 		err = fmt.Errorf("metric value not assigned name=%s, type=%s", m.ID, m.MType)
 	}
-	log.Debug().Msg(fmt.Sprintf("model validate=%+v,code=%d,err=%+v", m, code, err))
+	log.Debug().Fields(m).Int("code", code).Err(err).Msg("model validate")
 	return code, err
 }
 

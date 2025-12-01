@@ -1,7 +1,6 @@
 package repository
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/dag3322-oss/metrics/internal/model"
@@ -13,19 +12,14 @@ type MetricRepositoryMem struct {
 	metrics map[string]*model.Metric
 }
 
-func NewMemRepository() MetricRepositoryMem {
-	return MetricRepositoryMem{mx: &sync.Mutex{}, metrics: make(map[string]*model.Metric)}
+func NewMemRepository() *MetricRepositoryMem {
+	return &MetricRepositoryMem{mx: &sync.Mutex{}, metrics: make(map[string]*model.Metric)}
 }
 
 func (r MetricRepositoryMem) Get(name string) (model *model.Metric, err error) {
 	r.mx.Lock()
 	defer r.mx.Unlock()
-	m, ok := r.metrics[name]
-	if ok {
-		return m, nil
-	} else {
-		return nil, nil
-	}
+	return r.metrics[name], nil
 }
 
 func (r MetricRepositoryMem) GetAll() (m map[string]model.Metric, err error) {
@@ -47,7 +41,7 @@ func (r MetricRepositoryMem) SetOne(m model.Metric) error {
 	}
 	r.metrics[m.ID] = &m
 
-	log.Debug().Msg(fmt.Sprintf("metrics added %s,%s,%+v,%+v", r.metrics[m.ID].ID, r.metrics[m.ID].MType, r.metrics[m.ID].Value, r.metrics[m.ID].Delta))
+	log.Debug().Fields(r.metrics[m.ID]).Msg("metrics added")
 
 	return nil
 }
@@ -63,7 +57,9 @@ func (r MetricRepositoryMem) SetList(m map[string]model.Metric) error {
 		r.metrics[metricToSave.ID] = &metricToSave
 	}
 
-	log.Debug().Msg(fmt.Sprintf("Metrics saved=%d", len(m)))
+	log.Debug().Int("count", len(m)).Msg("Metrics saved")
 
 	return nil
 }
+
+func (r MetricRepositoryMem) Close() {}

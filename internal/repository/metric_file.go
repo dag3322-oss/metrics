@@ -2,7 +2,6 @@ package repository
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"sync"
@@ -17,8 +16,8 @@ type MetricRepositoryFile struct {
 	isFlush  bool
 }
 
-func NewFileRepository(fileName string, isFlush bool) MetricRepositoryFile {
-	return MetricRepositoryFile{mx: &sync.Mutex{}, fileName: fileName, isFlush: isFlush}
+func NewFileRepository(fileName string, isFlush bool) *MetricRepositoryFile {
+	return &MetricRepositoryFile{mx: &sync.Mutex{}, fileName: fileName, isFlush: isFlush}
 }
 
 func (r MetricRepositoryFile) Get(name string) (*model.Metric, error) {
@@ -28,7 +27,7 @@ func (r MetricRepositoryFile) Get(name string) (*model.Metric, error) {
 		return nil, err
 	} else {
 		m, ok := met[name]
-		log.Debug().Msg(fmt.Sprintf("Get: search in map m=%+v,ok=%t", m, ok))
+		log.Debug().Fields(m).Bool("ok", ok).Msg("Get: search in map")
 		if ok {
 			return &m, err
 		} else {
@@ -54,7 +53,7 @@ func (r MetricRepositoryFile) GetAll() (m map[string]model.Metric, err error) {
 	}
 
 	var a []model.Metric
-	log.Debug().Msg(fmt.Sprintf("GetAll: []byte from file=%s", b))
+	log.Debug().RawJSON("", b).Msg("GetAll: from file")
 	err = json.Unmarshal(b, &a)
 	if err != nil {
 		log.Err(err).Msg("GetAll: json unmarshal exception")
@@ -64,7 +63,7 @@ func (r MetricRepositoryFile) GetAll() (m map[string]model.Metric, err error) {
 	m = make(map[string]model.Metric, len(a))
 	for _, item := range a {
 		m[item.ID] = item
-		log.Debug().Msg(fmt.Sprintf("GetAll: to map=%+v", item))
+		log.Debug().Fields(item).Msg("GetAll: to map")
 	}
 
 	return m, nil
@@ -99,7 +98,7 @@ func (r MetricRepositoryFile) SetOne(m model.Metric) error {
 		return err
 	}
 
-	log.Debug().Msg(fmt.Sprintf("SetOne: metrics added %s", m.ID))
+	log.Debug().Str("id", m.ID).Msg("SetOne: metrics added")
 	return nil
 }
 
@@ -133,6 +132,8 @@ func (r MetricRepositoryFile) SetList(m map[string]model.Metric) error {
 		log.Err(err).Msg("SetList: file create exception")
 		return err
 	}
-	log.Debug().Msg(fmt.Sprintf("SetList: Metrics saved=%d", len(m)))
+	log.Debug().Int("count", len(m)).Msg("SetList: Metrics saved")
 	return nil
 }
+
+func (r MetricRepositoryFile) Close() {}

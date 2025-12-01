@@ -93,7 +93,7 @@ func (h MetricUpdateHandler) HandleMetricUpdateJSON(c echo.Context) (code int, b
 	if err != nil {
 		return http.StatusBadRequest, nil, err
 	}
-	log.Debug().Msg(fmt.Sprintf("body=%s", string(b)))
+	log.Debug().RawJSON("", b).Msg("body")
 
 	code, err = model.Validate(model.ActionUpdate, &m)
 	if code != http.StatusOK {
@@ -124,7 +124,7 @@ func (h MetricUpdateHandler) HandleMetricsUpdateJSON(c echo.Context) (code int, 
 	if err != nil {
 		return http.StatusBadRequest, nil, err
 	}
-	log.Debug().Msg(fmt.Sprintf("body=%s", string(b)))
+	log.Debug().RawJSON("", b).Msg("body")
 
 	for _, item := range m {
 		code, err = model.Validate(model.ActionUpdate, &item)

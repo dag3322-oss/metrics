@@ -9,4 +9,7 @@ type Metric interface {
 	GetAll() (m map[string]model.Metric, err error)
 	SetOne(m model.Metric) error
 	SetList(m map[string]model.Metric) error
+	Close()
 }
+
+//go:generate mockery
