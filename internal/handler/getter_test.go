@@ -16,7 +16,7 @@ func TestGetter(t *testing.T) {
 
 	var repo = repository.NewMockMetric(t)
 
-	var hg MetricGetHandler = NewMetricGetHandler(repo)
+	var hg = NewMetricGetHandler(repo)
 
 	TItem(t, hg.HandleMetricGet, "http://localhost:8080/value/", w, http.StatusNotFound, "path too short")
 	TItem(t, hg.HandleMetricGet, "http://localhost:8080/value/ololo/ololo/ololo", w, http.StatusBadRequest, "invalid metric type")

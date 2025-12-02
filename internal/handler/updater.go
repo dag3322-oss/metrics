@@ -53,9 +53,8 @@ func (h MetricUpdateHandler) HandleMetricUpdate(c echo.Context) error {
 		c.Response().Write(body)
 	}
 	if err != nil {
-		log.Err(err)
+		log.Err(err).Msg("HandleMetricUpdate")
 	}
-
 	return err
 }
 
@@ -117,11 +116,13 @@ func (h MetricUpdateHandler) HandleMetricsUpdateJSON(c echo.Context) (code int, 
 
 	b, err = io.ReadAll(c.Request().Body)
 	if err != nil {
+		log.Err(err).Msg("ReadAll")
 		return http.StatusBadRequest, nil, err
 	}
 
 	err = json.Unmarshal(b, &m)
 	if err != nil {
+		log.Err(err).Msg("Unmarshal")
 		return http.StatusBadRequest, nil, err
 	}
 	log.Debug().RawJSON("", b).Msg("body")
@@ -139,6 +140,7 @@ func (h MetricUpdateHandler) HandleMetricsUpdateJSON(c echo.Context) (code int, 
 
 	err = h.repo.SetList(mm)
 	if err != nil {
+		log.Err(err).Msg("SetList")
 		return http.StatusBadRequest, nil, err
 	}
 

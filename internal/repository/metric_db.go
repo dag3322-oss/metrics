@@ -2,27 +2,32 @@ package repository
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"net"
-	"reflect"
 	"time"
 
+	"github.com/dag3322-oss/metrics/internal/helper"
 	"github.com/dag3322-oss/metrics/internal/model"
 	"github.com/dag3322-oss/metrics/migrations"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"github.com/jackc/pgx/v5"
 	pg_pool "github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 )
+
+const sqlSet = `
+	insert into metric (id, "type", delta, "value", hash) values ($1, $2, $3, $4, $5) on conflict (id) do update
+	set delta = case when excluded."type" = 'counter' then coalesce(metric.delta, 0) + excluded.delta else excluded.delta end, 
+	"value" = excluded."value", 
+	hash = excluded.hash
+	`
 
 type MetricRepositoryDB struct {
 	context context.Context
 	pool    *pg_pool.Pool
 }
 
-func NewDBRepository(connectionString *string, context context.Context) (repo *MetricRepositoryDB, err error) {
+func NewDBRepository(connectionString *string, ctx context.Context) (repo *MetricRepositoryDB, err error) {
 	var pool *pg_pool.Pool
 
 	config, err := pg_pool.ParseConfig(*connectionString)
@@ -30,8 +35,10 @@ func NewDBRepository(connectionString *string, context context.Context) (repo *M
 		return nil, err
 	}
 	config.MaxConns = 10
-	config.MaxConnLifetime = 30 * time.Second
-	pool, err = pg_pool.NewWithConfig(context, config)
+	config.MaxConnLifetime = 20 * time.Second
+	ctxt, f := context.WithTimeout(ctx, 30*time.Second)
+	defer f()
+	pool, err = pg_pool.NewWithConfig(ctxt, config)
 	if err != nil {
 		return nil, err
 	}
@@ -56,138 +63,78 @@ func NewDBRepository(connectionString *string, context context.Context) (repo *M
 	}
 	log.Debug().Msg("Database migrations applied succesfully")
 
-	return &MetricRepositoryDB{pool: pool, context: context}, nil
-}
-
-func (r MetricRepositoryDB) acquire() (conn *pg_pool.Conn, err error) {
-	i := 0
-	for {
-		time.Sleep(time.Duration(i) * time.Second)
-		conn, err = r.pool.Acquire(r.context)
-		if err != nil {
-			var ne net.Error
-			if errors.As(err, &ne) {
-				switch i {
-				case 0:
-					i = 1
-				default:
-					i = i + 2
-				}
-				if i <= 5 {
-					log.Debug().Msg(fmt.Sprintf("repeat after timeout delay=%d", i))
-					continue
-				}
-			} else {
-				log.Debug().Msg(fmt.Sprintf("not network error=%+v,%s", err, reflect.TypeOf(err).Name()))
-			}
-			log.Err(err).Msg("request send exception")
-			return nil, err
-		}
-		return conn, nil
-	}
-
+	return &MetricRepositoryDB{pool: pool, context: ctx}, nil
 }
 
 func (r MetricRepositoryDB) Get(name string) (m *model.Metric, err error) {
-	conn, err := r.acquire()
+	tx, err := helper.NewRetryableTx(r.pool, r.context)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("from NewRetryableTx: %w", err)
 	}
-	defer conn.Release()
-	row := conn.QueryRow(r.context, "select * from metrics_get($1)", fmt.Sprintf("{\"id\": \"%s\"}", name))
-	log.Debug().Any("row", row).Msg("")
-	var b []byte
-	err = row.Scan(&b)
+	rows, err := tx.Query("select id, \"type\", delta, \"value\", coalesce(hash, '') hash from metric where id = $1", name)
 	if err != nil {
-		log.Err(err).Msg("invalid row type")
-		return nil, err
+		return nil, fmt.Errorf("from query: %w", err)
 	}
-
-	var mm []model.Metric
-	err = json.Unmarshal(b, &mm)
-	if err != nil {
-		log.Err(err).Msg("json marshal exception")
-		return nil, err
-	}
-	if len(mm) > 0 {
-		return &mm[0], nil
+	defer rows.Close()
+	log.Debug().Msg("before next")
+	if rows.Next() {
+		log.Debug().Any("row", rows).Msg("")
+		m, err := pgx.RowToStructByNameLax[model.Metric](rows)
+		if err != nil {
+			return nil, fmt.Errorf("from rowToStructByNameLax: %w", err)
+		}
+		return &m, nil
 	} else {
 		return nil, nil
 	}
 }
 
 func (r MetricRepositoryDB) GetAll() (result map[string]model.Metric, err error) {
-	conn, err := r.acquire()
+	tx, err := helper.NewRetryableTx(r.pool, r.context)
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Release()
-	row := conn.QueryRow(r.context, "select * from metrics_get(null)")
-	log.Debug().Msg(fmt.Sprintf("db row=%+v", row))
-	var b []byte
-	err = row.Scan(&b)
+	rows, err := tx.Query("select id, \"type\", delta, \"value\", coalesce(hash, '') hash from metric")
 	if err != nil {
-		log.Err(err).Msg("invalid row type")
-		return nil, err
+		return nil, fmt.Errorf("query: %w", err)
 	}
-
-	var mm []model.Metric
-	err = json.Unmarshal(b, &mm)
+	defer rows.Close()
+	a, err := pgx.CollectRows(rows, pgx.RowToStructByNameLax[model.Metric])
 	if err != nil {
-		log.Err(err).Msg("json marshal exception")
-		return nil, err
+		return nil, fmt.Errorf("CollectRows: %w", err)
 	}
-	result = make(map[string]model.Metric, len(mm))
-	for _, m := range mm {
+	result = make(map[string]model.Metric)
+	for _, m := range a {
 		result[m.ID] = m
 	}
 	return result, nil
 }
 
 func (r MetricRepositoryDB) SetOne(m model.Metric) error {
-	conn, err := r.acquire()
+	tx, err := helper.NewRetryableTx(r.pool, r.context)
 	if err != nil {
 		return err
 	}
-	defer conn.Release()
-	var mm []model.Metric
-	mm = append(mm, m)
-	b, err := json.Marshal(&mm)
+	err = tx.Exec(sqlSet, m.ID, m.MType, m.Delta, m.Value, m.Hash)
 	if err != nil {
-		log.Err(err).Msg("json marshal exception")
-		return err
-	}
-
-	_, err = conn.Exec(r.context, "select * from metrics_set($1)", b)
-	if err != nil {
-		log.Err(err).Msg("sql set error")
-		return err
+		return fmt.Errorf("exec: %w", err)
 	}
 	return nil
 }
 
 func (r MetricRepositoryDB) SetList(m map[string]model.Metric) error {
-	conn, err := r.acquire()
-	if err != nil {
-		return err
-	}
-	defer conn.Release()
-
-	var a []model.Metric
+	batch := &pgx.Batch{}
 	for _, item := range m {
-		a = append(a, item)
+		batch.Queue(sqlSet, item.ID, item.MType, item.Delta, item.Value, item.Hash)
 	}
 
-	b, err := json.Marshal(&a)
+	tx, err := helper.NewRetryableTx(r.pool, r.context)
 	if err != nil {
-		log.Err(err).Msg("json marshal exception")
 		return err
 	}
-
-	_, err = conn.Exec(r.context, "select * from metrics_set($1)", b)
+	err = tx.Batch(batch)
 	if err != nil {
-		log.Err(err).Msg("sql set error")
-		return err
+		return fmt.Errorf("batch: %w", err)
 	}
 	return nil
 }

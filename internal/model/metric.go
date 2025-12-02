@@ -25,11 +25,11 @@ const (
 // что бы отличать значение "0", от не заданного значения
 // и соответственно не кодировать в структуру.
 type Metric struct {
-	ID    string   `json:"id"`
-	MType string   `json:"type"`
-	Delta *int64   `json:"delta,omitempty"`
-	Value *float64 `json:"value,omitempty"`
-	Hash  string   `json:"hash,omitempty"`
+	ID    string   `json:"id" db:"id"`
+	MType string   `json:"type" db:"type"`
+	Delta *int64   `json:"delta,omitempty" db:"delta"`
+	Value *float64 `json:"value,omitempty" db:"value"`
+	Hash  string   `json:"hash,omitempty" db:"hash"`
 }
 
 func FromKeyValue(m *Metric, k string, v any) error {

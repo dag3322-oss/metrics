@@ -68,7 +68,8 @@ func (h MetricGetHandler) HandleMetricGetURL(c echo.Context) (code int, body []b
 
 	m, err := h.repo.Get(name)
 	if err != nil {
-		return code, nil, err
+		log.Err(err).Msg("repo.Get")
+		return http.StatusBadRequest, nil, err
 	}
 	if m != nil {
 		c.Response().Header().Set("Content-Type", "text/html")
@@ -88,11 +89,13 @@ func (h MetricGetHandler) HandleMetricGetJSON(c echo.Context) (code int, body []
 
 	b, err = io.ReadAll(c.Request().Body)
 	if err != nil {
+		log.Err(err).Msg("io.ReadAll")
 		return http.StatusBadRequest, nil, err
 	}
 
 	err = json.Unmarshal(b, &m)
 	if err != nil {
+		log.Err(err).Msg("Unmarshal")
 		return http.StatusBadRequest, nil, err
 	}
 	log.Debug().RawJSON("", b).Msg("body")
@@ -104,6 +107,7 @@ func (h MetricGetHandler) HandleMetricGetJSON(c echo.Context) (code int, body []
 
 	m2, err := h.repo.Get(m.ID)
 	if err != nil {
+		log.Err(err).Msg("repo.Get")
 		return http.StatusBadRequest, nil, err
 	}
 	if m2 == nil {
@@ -115,6 +119,7 @@ func (h MetricGetHandler) HandleMetricGetJSON(c echo.Context) (code int, body []
 	if err == nil {
 		return http.StatusContinue, nil, nil
 	} else {
+		log.Err(err).Msg("ontext to JSON")
 		return http.StatusBadRequest, nil, err
 	}
 }
