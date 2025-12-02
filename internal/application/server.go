@@ -155,11 +155,11 @@ func (s Server) Run(cmdArgs []string) error {
 	defer stop()
 
 	var repo repository.Metric
-	db_ctx, db_ctx_f := context.WithCancel(context.Background())
-	defer db_ctx_f()
+	dbCtx, dbCtxF := context.WithCancel(context.Background())
+	defer dbCtxF()
 	switch s.StorageType {
 	case StorageTypeDB:
-		repo, err = repository.NewDBRepository(s.DBConnectionString, db_ctx)
+		repo, err = repository.NewDBRepository(s.DBConnectionString, dbCtx)
 		if err != nil {
 			log.Err(err).Msg("database initialization")
 			return err
@@ -265,11 +265,14 @@ func (s Server) Run(cmdArgs []string) error {
 		log.Info().Msg("shutdown started...")
 		ctxt, f := context.WithTimeout(context.Background(), 20*time.Second)
 		defer f()
+
 		e.Shutdown(ctxt)
 		log.Info().Msg("http server shutdown complete")
+
 		//repo.Close() wait infinite as described in docs
-		db_ctx_f()
+		dbCtxF()
 		time.Sleep(3 * time.Second)
+
 		log.Info().Msg("repository shutdown complete")
 		stop()
 	}
