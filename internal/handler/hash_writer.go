@@ -45,9 +45,11 @@ func (w *hashResponseWriter) WriteHeader(code int) {
 }
 
 func (w *hashResponseWriter) Write(b []byte) (int, error) {
-	bodyHash := sha256.Sum256(append(b[:], []byte(*w.key)...))
-	s := base64.StdEncoding.EncodeToString(bodyHash[:])
-	w.Header().Set(helper.HashHeaderName, s)
+	if w.key != nil {
+		bodyHash := sha256.Sum256(append(b[:], []byte(*w.key)...))
+		s := base64.StdEncoding.EncodeToString(bodyHash[:])
+		w.Header().Set(helper.HashHeaderName, s)
+	}
 	return w.w.Write(b)
 }
 
@@ -56,7 +58,7 @@ func (w *hashResponseWriter) Unwrap() http.ResponseWriter {
 }
 
 func (w *hashResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	return http.NewResponseController(w.w).Hijack()
+	return nil, nil, nil
 }
 
 func (w *hashResponseWriter) Push(target string, opts *http.PushOptions) error {
