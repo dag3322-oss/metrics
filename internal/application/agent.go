@@ -3,6 +3,7 @@ package application
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -13,22 +14,27 @@ import (
 	"runtime"
 	"runtime/metrics"
 	"strconv"
-	"syscall"
 	"time"
 
 	"github.com/rs/zerolog/log"
 
 	"encoding/json"
 
-	models "github.com/dag3322-oss/metrics/internal/model"
-	repository "github.com/dag3322-oss/metrics/internal/repository"
+	"github.com/dag3322-oss/metrics/internal/helper"
+	"github.com/dag3322-oss/metrics/internal/model"
+	"github.com/dag3322-oss/metrics/internal/repository"
+	"github.com/dag3322-oss/metrics/internal/service"
 	echo "github.com/labstack/echo/v4"
 )
+
+var agentReady = make(chan struct{})
 
 type Agent struct {
 	Host           string
 	ReportInterval *int64
 	PollInterval   *int64
+	repo           repository.Metric
+	httpClient     *helper.RetryableClient
 }
 
 func (a *Agent) setParams(cmdArgs []string) error {
@@ -49,7 +55,7 @@ func (a *Agent) setParams(cmdArgs []string) error {
 	if err != nil {
 		return err
 	}
-	log.Debug().Msg(fmt.Sprintf("host=%s", a.Host))
+	log.Debug().Str("host", a.Host).Msg("")
 
 	if a.ReportInterval == nil {
 		se, exists := os.LookupEnv("REPORT_INTERVAL")
@@ -81,27 +87,34 @@ func (a *Agent) setParams(cmdArgs []string) error {
 }
 
 func (a *Agent) Run(cmdArgs []string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
 	var err = a.setParams(cmdArgs)
 	if err != nil {
 		log.Err(err).Msg("setParams exception")
 		return err
 	}
 
-	var repo = repository.NewMemRepository()
+	a.repo = repository.NewMemRepository()
 
-	Collect(time.Now(), repo)
+	a.httpClient = helper.NewRetryableClient()
+
+	Collect(time.Now(), a.repo)
 	var collectTimer = time.NewTicker(time.Second * time.Duration(*a.PollInterval))
-	go CollectEvent(collectTimer, repo)
+	go CollectEvent(collectTimer, a.repo)
 
-	var httpc = http.Client{Timeout: time.Second * time.Duration(30)}
 	var sendTimer = time.NewTicker(time.Second * time.Duration(*a.ReportInterval))
-	go SendEvent(sendTimer, repo, httpc, a.Host)
+	go SendEvent(sendTimer, a.repo, a.httpClient, a.Host)
 
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	<-sigs
-	collectTimer.Stop()
-	sendTimer.Stop()
+	select {
+	case <-agentReady:
+		fmt.Println("ready")
+	case <-ctx.Done():
+		collectTimer.Stop()
+		sendTimer.Stop()
+		stop()
+	}
 
 	return nil
 }
@@ -139,71 +152,67 @@ func GetSamples() []metrics.Sample {
 	return s
 }
 
-func CollectEvent(tick *time.Ticker, repo repository.Repository) {
+func CollectEvent(tick *time.Ticker, repo repository.Metric) {
 	for t := range tick.C {
 		Collect(t, repo)
 	}
 }
 
-func Collect(t time.Time, repo repository.Repository) error {
+func Collect(t time.Time, repo repository.Metric) error {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	repo.UpdateMetric("Alloc", m.Alloc)
-	repo.UpdateMetric("BuckHashSys", m.BuckHashSys)
-	repo.UpdateMetric("Frees", m.Frees)
-	repo.UpdateMetric("GCCPUFraction", m.GCCPUFraction)
-	repo.UpdateMetric("GCSys", m.GCSys)
-	repo.UpdateMetric("HeapAlloc", m.HeapAlloc)
-	repo.UpdateMetric("HeapIdle", m.HeapIdle)
-	repo.UpdateMetric("HeapInuse", m.HeapInuse)
-	repo.UpdateMetric("HeapObjects", m.HeapObjects)
-	repo.UpdateMetric("HeapReleased", m.HeapReleased)
-	repo.UpdateMetric("HeapSys", m.HeapSys)
-	repo.UpdateMetric("LastGC", m.LastGC)
-	repo.UpdateMetric("Lookups", m.Lookups)
-	repo.UpdateMetric("MCacheInuse", m.MCacheInuse)
-	repo.UpdateMetric("MCacheSys", m.MCacheSys)
-	repo.UpdateMetric("MSpanInuse", m.MSpanInuse)
-	repo.UpdateMetric("MSpanSys", m.MSpanSys)
-	repo.UpdateMetric("Mallocs", m.Mallocs)
-	repo.UpdateMetric("NextGC", m.NextGC)
-	repo.UpdateMetric("NumForcedGC", m.NumForcedGC)
-	repo.UpdateMetric("NumGC", m.NumGC)
-	repo.UpdateMetric("OtherSys", m.OtherSys)
-	repo.UpdateMetric("PauseTotalNs", m.PauseTotalNs)
-	repo.UpdateMetric("StackInuse", m.StackInuse)
-	repo.UpdateMetric("StackSys", m.StackSys)
-	repo.UpdateMetric("Sys", m.Sys)
-	repo.UpdateMetric("TotalAlloc", m.TotalAlloc)
+	setMetric(repo, "Alloc", m.Alloc)
+	setMetric(repo, "BuckHashSys", m.BuckHashSys)
+	setMetric(repo, "Frees", m.Frees)
+	setMetric(repo, "GCCPUFraction", m.GCCPUFraction)
+	setMetric(repo, "GCSys", m.GCSys)
+	setMetric(repo, "HeapAlloc", m.HeapAlloc)
+	setMetric(repo, "HeapIdle", m.HeapIdle)
+	setMetric(repo, "HeapInuse", m.HeapInuse)
+	setMetric(repo, "HeapObjects", m.HeapObjects)
+	setMetric(repo, "HeapReleased", m.HeapReleased)
+	setMetric(repo, "HeapSys", m.HeapSys)
+	setMetric(repo, "LastGC", m.LastGC)
+	setMetric(repo, "Lookups", m.Lookups)
+	setMetric(repo, "MCacheInuse", m.MCacheInuse)
+	setMetric(repo, "MCacheSys", m.MCacheSys)
+	setMetric(repo, "MSpanInuse", m.MSpanInuse)
+	setMetric(repo, "MSpanSys", m.MSpanSys)
+	setMetric(repo, "Mallocs", m.Mallocs)
+	setMetric(repo, "NextGC", m.NextGC)
+	setMetric(repo, "NumForcedGC", m.NumForcedGC)
+	setMetric(repo, "NumGC", m.NumGC)
+	setMetric(repo, "OtherSys", m.OtherSys)
+	setMetric(repo, "PauseTotalNs", m.PauseTotalNs)
+	setMetric(repo, "StackInuse", m.StackInuse)
+	setMetric(repo, "StackSys", m.StackSys)
+	setMetric(repo, "Sys", m.Sys)
+	setMetric(repo, "TotalAlloc", m.TotalAlloc)
 
-	repo.UpdateMetric("RandomValue", rand.Float64())
-	repo.UpdateMetric("PollCount", int64(1))
+	setMetric(repo, "RandomValue", rand.Float64())
+	setMetric(repo, "PollCount", int64(1))
 	return nil
 }
 
-func SendEvent(tick *time.Ticker, repo repository.Repository, httpc http.Client, host string) {
+func SendEvent(tick *time.Ticker, repo repository.Metric, httpc *helper.RetryableClient, host string) {
 	for range tick.C {
-		var err = Send(repo, httpc, host)
+		var err = SendBatch(repo, httpc, host)
 		if err != nil {
-			log.Err(err).Msg("")
+			log.Err(err).Msg("SendBatch")
 		}
 	}
 }
 
-func Send(repo repository.Repository, httpc http.Client, host string) error {
+func Send(repo repository.Metric, httpc *helper.RetryableClient, host string) error {
 	var err error
-	var m *models.Metrics
-	for k, v := range repo.GetAll() {
-		m = new(models.Metrics)
-		err = models.FromKeyValue(m, k, v)
-		if err != nil {
-			log.Err(err).Msg("model create exception")
-			return err
-		}
+	mm, err := repo.GetAll()
+	if err != nil {
+		return err
+	}
+	for _, m := range mm {
 		var b []byte
-		b, err = json.Marshal(*m)
+		b, err = json.Marshal(m)
 		if err != nil {
-			log.Err(err).Msg("json marshal exception")
 			return err
 		}
 
@@ -211,37 +220,96 @@ func Send(repo repository.Repository, httpc http.Client, host string) error {
 		gzWriter := gzip.NewWriter(&buf)
 		_, err = gzWriter.Write(b)
 		if err != nil {
-			log.Err(err).Msg("zip exception")
 			return err
 		}
 		gzWriter.Close()
 
 		req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/update", host), &buf)
 		if err != nil {
-			log.Err(err).Msg("request create exception")
 			return err
 		}
 		req.Header.Set(echo.HeaderContentEncoding, "gzip")
 		req.Header.Set("Accept-Encoding", "gzip")
 		req.Header.Add(echo.HeaderVary, echo.HeaderAcceptEncoding)
 		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-		client := &http.Client{}
-		client.Timeout = 30 * time.Second
-		resp, err := client.Do(req)
+		resp, err := httpc.Do(req)
 		if err != nil {
-			log.Err(err).Msg("request send exception")
 			return err
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			err = fmt.Errorf("HTTP status code = %d", resp.StatusCode)
-			log.Err(err).Msg("")
-			return err
+			return fmt.Errorf("HTTP status code = %d", resp.StatusCode)
 		}
 		defer resp.Body.Close()
 	}
 	log.Debug().Msg("metrics sended")
-	repo.UpdateMetric("PollCount", int64(0))
+	setMetric(repo, "PollCount", int64(0))
+	return nil
+}
+
+func SendBatch(repo repository.Metric, httpc *helper.RetryableClient, host string) error {
+	var err error
+	mm, err := repo.GetAll()
+	if err != nil {
+		return err
+	}
+	var a []model.Metric
+	for _, m := range mm {
+		a = append(a, m)
+	}
+
+	var b []byte
+	b, err = json.Marshal(&a)
+	if err != nil {
+		return err
+	}
+
+	var buf bytes.Buffer
+	gzWriter := gzip.NewWriter(&buf)
+	_, err = gzWriter.Write(b)
+	if err != nil {
+		return err
+	}
+	gzWriter.Close()
+
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/updates", host), &buf)
+	if err != nil {
+		return err
+	}
+	req.Header.Set(echo.HeaderContentEncoding, "gzip")
+	req.Header.Set("Accept-Encoding", "gzip")
+	req.Header.Add(echo.HeaderVary, echo.HeaderAcceptEncoding)
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	resp, err := httpc.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP status code = %d", resp.StatusCode)
+	}
+	defer resp.Body.Close()
+
+	log.Debug().Msg("metrics sended")
+	err = setMetric(repo, "PollCount", int64(0))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func setMetric(repo repository.Metric, name string, value any) error {
+	m, err := service.NameValueToModel(name, value)
+	if err != nil {
+		return err
+	}
+	log.Debug().Fields(m).Msg("setMetric")
+	err = repo.SetOne(*m)
+	if err != nil {
+		return err
+	}
 	return nil
 }

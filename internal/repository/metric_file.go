@@ -1,0 +1,139 @@
+package repository
+
+import (
+	"encoding/json"
+	"io"
+	"os"
+	"sync"
+
+	"github.com/dag3322-oss/metrics/internal/model"
+	"github.com/rs/zerolog/log"
+)
+
+type MetricRepositoryFile struct {
+	mx       *sync.Mutex
+	fileName string
+	isFlush  bool
+}
+
+func NewFileRepository(fileName string, isFlush bool) *MetricRepositoryFile {
+	return &MetricRepositoryFile{mx: &sync.Mutex{}, fileName: fileName, isFlush: isFlush}
+}
+
+func (r MetricRepositoryFile) Get(name string) (*model.Metric, error) {
+	met, err := r.GetAll()
+	if err != nil {
+		log.Err(err).Msg("Get: GetAll return exception")
+		return nil, err
+	} else {
+		m, ok := met[name]
+		log.Debug().Fields(m).Bool("ok", ok).Msg("Get: search in map")
+		if ok {
+			return &m, err
+		} else {
+			return nil, nil
+		}
+	}
+}
+
+func (r MetricRepositoryFile) GetAll() (m map[string]model.Metric, err error) {
+	f, err := os.OpenFile(r.fileName, os.O_CREATE|os.O_APPEND|os.O_RDONLY, 0666)
+	if err != nil {
+		log.Err(err).Msg("GetAll: file create exception")
+		return nil, err
+	}
+	defer f.Close()
+	b, err := io.ReadAll(f)
+	if err != nil {
+		log.Err(err).Msg("GetAll: file read exception")
+		return nil, err
+	}
+	if len(b) == 0 {
+		b = []byte("null")
+	}
+
+	var a []model.Metric
+	log.Debug().RawJSON("", b).Msg("GetAll: from file")
+	err = json.Unmarshal(b, &a)
+	if err != nil {
+		log.Err(err).Msg("GetAll: json unmarshal exception")
+		return nil, err
+	}
+
+	m = make(map[string]model.Metric, len(a))
+	for _, item := range a {
+		m[item.ID] = item
+		log.Debug().Fields(item).Msg("GetAll: to map")
+	}
+
+	return m, nil
+}
+
+func (r MetricRepositoryFile) SetOne(m model.Metric) error {
+	r.mx.Lock()
+	defer r.mx.Unlock()
+	met, err := r.GetAll()
+	if err != nil {
+		return err
+	}
+
+	if metricSaved, ok := met[m.ID]; !r.isFlush && ok && m.MType == model.Counter && metricSaved.Delta != nil {
+		*m.Delta = *m.Delta + *metricSaved.Delta
+	}
+	met[m.ID] = m
+
+	var a []model.Metric
+	for _, item := range met {
+		a = append(a, item)
+	}
+
+	b, err := json.Marshal(&a)
+	if err != nil {
+		log.Err(err).Msg("SetOne: json marshal exception")
+		return err
+	}
+	err = os.WriteFile(r.fileName, b, 0600)
+	if err != nil {
+		log.Err(err).Msg("SetOne: file create exception")
+		return err
+	}
+
+	log.Debug().Str("id", m.ID).Msg("SetOne: metrics added")
+	return nil
+}
+
+func (r MetricRepositoryFile) SetList(m map[string]model.Metric) error {
+	r.mx.Lock()
+	defer r.mx.Unlock()
+
+	met, err := r.GetAll()
+	if err != nil {
+		return err
+	}
+
+	for _, metricToSave := range m {
+		if metricSaved, ok := met[metricToSave.ID]; !r.isFlush && ok && metricToSave.MType == model.Counter && metricSaved.Delta != nil {
+			*metricToSave.Delta = *metricToSave.Delta + *metricSaved.Delta
+		}
+		met[metricToSave.ID] = metricToSave
+	}
+
+	var a []model.Metric
+	for _, item := range met {
+		a = append(a, item)
+	}
+	b, err := json.Marshal(&a)
+	if err != nil {
+		log.Err(err).Msg("SetList: json marshal exception")
+		return err
+	}
+	err = os.WriteFile(r.fileName, b, 0600)
+	if err != nil {
+		log.Err(err).Msg("SetList: file create exception")
+		return err
+	}
+	log.Debug().Int("count", len(m)).Msg("SetList: Metrics saved")
+	return nil
+}
+
+func (r MetricRepositoryFile) Close() {}

@@ -13,41 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var repo MockRepository = MockRepository{m: make(map[string]any)}
-
-type MockRepository struct {
-	m map[string]any
-}
-
-func (s MockRepository) UpdateMetric(name string, value any) error {
-	return nil
-}
-
-func (s MockRepository) GetAllAsString() string {
-	return ""
-}
-
-func (s MockRepository) GetAll() map[string]any {
-	s.m["int64"] = int64(100500)
-	s.m["float64"] = float64(100500.05)
-	return s.m
-}
-
-func (s MockRepository) Get(name string) (value any, exists bool) {
-	switch name {
-	case "int64":
-		return int64(100500), true
-	case "float64":
-		return float64(100500.05), true
-	default:
-		return nil, false
-	}
-}
-
-func (s MockRepository) SaveAll(m map[string]any) error {
-	return nil
-}
-
 type ResponseWriterMock struct {
 	status *int
 }
@@ -76,6 +41,7 @@ func TItem(t *testing.T, h echo.HandlerFunc, _url string, w ResponseWriterMock, 
 func BuildRequest(urlString string) (*http.Request, error) {
 	var err error
 	urlRef, err := url.Parse(urlString)
+	strings.Split(urlRef.Path, "/")
 	return &http.Request{URL: urlRef}, err
 }
 

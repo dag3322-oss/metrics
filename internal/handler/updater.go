@@ -8,17 +8,18 @@ import (
 
 	"github.com/rs/zerolog/log"
 
-	models "github.com/dag3322-oss/metrics/internal/model"
-	metrics "github.com/dag3322-oss/metrics/internal/repository"
+	"github.com/dag3322-oss/metrics/internal/model"
+	"github.com/dag3322-oss/metrics/internal/repository"
+	"github.com/dag3322-oss/metrics/internal/service"
 	echo "github.com/labstack/echo/v4"
 )
 
 type MetricUpdateHandler struct {
-	repo metrics.Repository
+	repo repository.Metric
 }
 
 func NewMetricUpdateHandler(
-	repo metrics.Repository,
+	repo repository.Metric,
 ) MetricUpdateHandler {
 	return MetricUpdateHandler{repo: repo}
 }
@@ -52,9 +53,8 @@ func (h MetricUpdateHandler) HandleMetricUpdate(c echo.Context) error {
 		c.Response().Write(body)
 	}
 	if err != nil {
-		log.Err(err)
+		log.Err(err).Msg("HandleMetricUpdate")
 	}
-
 	return err
 }
 
@@ -64,7 +64,12 @@ func (h MetricUpdateHandler) HandleMetricUpdateURL(c echo.Context) (code int, bo
 		return code, nil, err
 	}
 
-	err = h.repo.UpdateMetric(name, value)
+	m, err := service.NameValueToModel(name, value)
+	if err != nil {
+		return http.StatusBadRequest, nil, err
+	}
+
+	err = h.repo.SetOne(*m)
 	if err != nil {
 		return http.StatusBadRequest, nil, err
 	}
@@ -73,9 +78,7 @@ func (h MetricUpdateHandler) HandleMetricUpdateURL(c echo.Context) (code int, bo
 }
 
 func (h MetricUpdateHandler) HandleMetricUpdateJSON(c echo.Context) (code int, body []byte, err error) {
-	var m models.Metrics
-	var name string
-	var value any
+	var m model.Metric
 	var b []byte
 
 	code = http.StatusBadRequest
@@ -89,22 +92,89 @@ func (h MetricUpdateHandler) HandleMetricUpdateJSON(c echo.Context) (code int, b
 	if err != nil {
 		return http.StatusBadRequest, nil, err
 	}
-	log.Debug().Msg(fmt.Sprintf("body=%s", string(b)))
+	log.Debug().RawJSON("", b).Msg("body")
 
-	code, err = models.Validate(models.ActionUpdate, &m)
+	code, err = model.Validate(model.ActionUpdate, &m)
 	if code != http.StatusOK {
 		return code, nil, err
 	}
 
-	name, value, err = models.ToKeyValue(&m)
-	if err != nil {
-		return http.StatusBadRequest, nil, err
-	}
-
-	err = h.repo.UpdateMetric(name, value)
+	err = h.repo.SetOne(m)
 	if err != nil {
 		return http.StatusBadRequest, nil, err
 	}
 
 	return http.StatusOK, nil, nil
+}
+
+func (h MetricUpdateHandler) HandleMetricsUpdateJSON(c echo.Context) (code int, body []byte, err error) {
+	var m []model.Metric
+	var b []byte
+	var mm = make(map[string]model.Metric)
+
+	code = http.StatusBadRequest
+
+	b, err = io.ReadAll(c.Request().Body)
+	if err != nil {
+		log.Err(err).Msg("ReadAll")
+		return http.StatusBadRequest, nil, err
+	}
+
+	err = json.Unmarshal(b, &m)
+	if err != nil {
+		log.Err(err).Msg("Unmarshal")
+		return http.StatusBadRequest, nil, err
+	}
+	log.Debug().RawJSON("", b).Msg("body")
+
+	for _, item := range m {
+		code, err = model.Validate(model.ActionUpdate, &item)
+		if code != http.StatusOK {
+			return code, nil, err
+		}
+		if itemSaved, ok := mm[item.ID]; ok && item.MType == model.Counter && itemSaved.Delta != nil {
+			*item.Delta = *item.Delta + *itemSaved.Delta
+		}
+		mm[item.ID] = item
+	}
+
+	err = h.repo.SetList(mm)
+	if err != nil {
+		log.Err(err).Msg("SetList")
+		return http.StatusBadRequest, nil, err
+	}
+
+	return http.StatusOK, nil, nil
+}
+
+func (h MetricUpdateHandler) HandleMetricsUpdate(c echo.Context) error {
+	var code int
+	var body []byte
+	var err error
+
+	switch c.Request().Method {
+	case "POST":
+		mediaType := GetMediaType(c.Request())
+		switch mediaType {
+		case echo.MIMEApplicationJSON:
+			code, body, err = h.HandleMetricsUpdateJSON(c)
+
+		default:
+			c.Response().WriteHeader(http.StatusUnsupportedMediaType)
+			return fmt.Errorf("unsupported media type:%s", mediaType)
+		}
+	default:
+		code = http.StatusMethodNotAllowed
+		err = fmt.Errorf("unsupported http method:%s", c.Request().Method)
+	}
+
+	c.Response().WriteHeader(code)
+	if len(body) > 0 {
+		c.Response().Write(body)
+	}
+	if err != nil {
+		log.Err(err)
+	}
+
+	return err
 }

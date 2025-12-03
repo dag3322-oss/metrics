@@ -1,6 +1,7 @@
-package models
+package model
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -23,15 +24,15 @@ const (
 // Delta и Value объявлены через указатели,
 // что бы отличать значение "0", от не заданного значения
 // и соответственно не кодировать в структуру.
-type Metrics struct {
-	ID    string   `json:"id"`
-	MType string   `json:"type"`
-	Delta *int64   `json:"delta,omitempty"`
-	Value *float64 `json:"value,omitempty"`
-	Hash  string   `json:"hash,omitempty"`
+type Metric struct {
+	ID    string   `json:"id" db:"id"`
+	MType string   `json:"type" db:"type"`
+	Delta *int64   `json:"delta,omitempty" db:"delta"`
+	Value *float64 `json:"value,omitempty" db:"value"`
+	Hash  string   `json:"hash,omitempty" db:"hash"`
 }
 
-func FromKeyValue(m *Metrics, k string, v any) error {
+func FromKeyValue(m *Metric, k string, v any) error {
 	var err error
 
 	m.ID = k
@@ -62,7 +63,7 @@ func FromKeyValue(m *Metrics, k string, v any) error {
 	return nil
 }
 
-func ToKeyValue(m *Metrics) (k string, v any, err error) {
+func ToKeyValue(m *Metric) (k string, v any, err error) {
 	k = m.ID
 	if k == "" {
 		err = fmt.Errorf("empty metric name")
@@ -79,7 +80,7 @@ func ToKeyValue(m *Metrics) (k string, v any, err error) {
 	return k, v, err
 }
 
-func Validate(action string, m *Metrics) (code int, err error) {
+func Validate(action string, m *Metric) (code int, err error) {
 	code = http.StatusOK
 	if m.ID == "" {
 		code = http.StatusNotFound
@@ -89,11 +90,29 @@ func Validate(action string, m *Metrics) (code int, err error) {
 		code = http.StatusBadRequest
 		err = fmt.Errorf("invalid metric type=%s", m.MType)
 	}
-	log.Debug().Msg(fmt.Sprintf("model validate=%+v,code=%d,err=%+v", m, code, err))
+	if code == http.StatusOK && action == ActionUpdate && (m.MType == Gauge && m.Value == nil || m.MType == Counter && m.Delta == nil) {
+		code = http.StatusBadRequest
+		err = fmt.Errorf("metric value not assigned name=%s, type=%s", m.ID, m.MType)
+	}
+	log.Debug().Fields(m).Int("code", code).Err(err).Msg("model validate")
 	return code, err
 }
 
-func SetValue(m *Metrics, value any) error {
+func (m Metric) StringValue() string {
+	switch m.MType {
+	case Gauge:
+		return fmt.Sprintf("%v", *m.Value)
+	case Counter:
+		return fmt.Sprintf("%v", *m.Delta)
+	default:
+		return ""
+	}
+}
+
+func SetValue(m *Metric, value any) error {
+	if m == nil {
+		return errors.New("metric.SetValue: empty metric pointer")
+	}
 	switch m.MType {
 	case Gauge:
 		f := value.(float64)
@@ -102,7 +121,7 @@ func SetValue(m *Metrics, value any) error {
 		i := value.(int64)
 		m.Delta = &i
 	default:
-		return fmt.Errorf("invalid metric type=%s", m.MType)
+		return fmt.Errorf("metric.SetValue: invalid metric type=%s", m.MType)
 	}
 	return nil
 }

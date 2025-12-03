@@ -1,15 +1,18 @@
 package application
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"time"
 
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/rs/zerolog/log"
 
 	handlers "github.com/dag3322-oss/metrics/internal/handler"
@@ -18,35 +21,53 @@ import (
 	middleware "github.com/labstack/echo/v4/middleware"
 )
 
+var serverReady = make(chan struct{})
+
+type StorageTypeType string
+
+const (
+	StorageTypeMem  StorageTypeType = "memory"
+	StorageTypeFile StorageTypeType = "file"
+	StorageTypeDB   StorageTypeType = "db"
+)
+
 type Server struct {
 	Host                   string
 	StoreInterval          *int64
-	StoragePath            string
+	StoragePath            *string
 	LoadFromStorageOnStart *bool
+	DBConnectionString     *string
+	StorageType            StorageTypeType
 }
 
 func (s *Server) setParams(cmdArgs []string) error {
 	var err error
+
+	for _, s := range os.Environ() {
+		log.Debug().Msg(fmt.Sprintf("OS_%s", s))
+	}
+
 	if cmdArgs == nil {
 		cmdArgs = os.Args[1:]
 	}
 	var flagSet = flag.NewFlagSet("server", flag.ExitOnError)
 	var flagHost = flagSet.String("a", "localhost:8080", "host:port")
 	var flagStoreInterval = flagSet.Int64("i", 300, "metrics store to file interval, sec")
-	var flagStoragePath = flagSet.String("f", "./metrics.json", "metrics storage path")
+	var flagStoragePath = flagSet.String("f", "", "metrics storage path")
 	var flagLoadFromStorageOnStart = flagSet.Bool("r", false, "load metrics from storage on start")
+	var flagDBConnectionString = flagSet.String("d", "", "database connection string")
+
 	if len(cmdArgs) > 0 {
 		flagSet.Parse(cmdArgs)
 	}
-	log.Debug().Msg(fmt.Sprintf("before assign s.host=%s,os.host=%s,flag.host=%s", s.Host, os.Getenv("ADDRESS"), *flagHost))
+	log.Debug().Str("s.host", s.Host).Str("os.host", os.Getenv("ADDRESS")).Str("flag.host", *flagHost).Msg("before assign")
 
 	s.Host = NotEmpty(s.Host, os.Getenv("ADDRESS"), *flagHost)
-	log.Debug().Msg(fmt.Sprintf("after assign s.host=%s", s.Host))
+	log.Debug().Str("s.host", s.Host).Msg("after assign")
 	_, _, err = net.SplitHostPort(s.Host)
 	if err != nil {
 		return err
 	}
-	log.Debug().Msg(fmt.Sprintf("host=%s", s.Host))
 
 	if s.StoreInterval == nil {
 		se, exists := os.LookupEnv("STORE_INTERVAL")
@@ -57,11 +78,18 @@ func (s *Server) setParams(cmdArgs []string) error {
 			}
 			s.StoreInterval = &i
 		} else {
-			s.StoreInterval = flagStoreInterval
+			flagSet.Visit(func(f *flag.Flag) {
+				if f.Name == "i" {
+					s.StoreInterval = flagStoreInterval
+					return
+				}
+			})
 		}
 	}
-
-	s.StoragePath = NotEmpty(s.StoragePath, os.Getenv("FILE_STORAGE_PATH"), *flagStoragePath)
+	if s.StoreInterval == nil {
+		i := int64(300)
+		s.StoreInterval = &i
+	}
 
 	if s.LoadFromStorageOnStart == nil {
 		lso, exists := os.LookupEnv("RESTORE")
@@ -76,6 +104,43 @@ func (s *Server) setParams(cmdArgs []string) error {
 		}
 	}
 
+	if s.StoragePath == nil {
+		fs, exists := os.LookupEnv("FILE_STORAGE_PATH")
+		if exists {
+			s.StoragePath = &fs
+		} else {
+			flagSet.Visit(func(f *flag.Flag) {
+				if f.Name == "f" {
+					s.StoragePath = flagStoragePath
+					return
+				}
+			})
+		}
+	}
+
+	if s.DBConnectionString == nil {
+		db, exists := os.LookupEnv("DATABASE_DSN")
+		if exists {
+			s.DBConnectionString = &db
+		} else {
+			flagSet.Visit(func(f *flag.Flag) {
+				if f.Name == "d" {
+					s.DBConnectionString = flagDBConnectionString
+					log.Debug().Str("flagDBConnectionString", *flagDBConnectionString).Msg("")
+					return
+				}
+			})
+		}
+	}
+
+	if s.DBConnectionString != nil {
+		s.StorageType = StorageTypeDB
+	} else if s.StoragePath != nil {
+		s.StorageType = StorageTypeFile
+	} else {
+		s.StorageType = StorageTypeMem
+	}
+
 	return err
 }
 
@@ -86,7 +151,39 @@ func (s Server) Run(cmdArgs []string) error {
 		return err
 	}
 
-	var repo = repository.NewMemRepository()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	var repo repository.Metric
+	dbCtx, dbCtxF := context.WithCancel(context.Background())
+	defer dbCtxF()
+	switch s.StorageType {
+	case StorageTypeDB:
+		repo, err = repository.NewDBRepository(s.DBConnectionString, dbCtx)
+		if err != nil {
+			log.Err(err).Msg("database initialization")
+			return err
+		}
+	case StorageTypeMem:
+		repo = repository.NewMemRepository()
+	case StorageTypeFile:
+		repo = repository.NewFileRepository(*s.StoragePath, false)
+	default:
+		return fmt.Errorf("storage type not set")
+	}
+	defer repo.Close()
+	log.Debug().Any("repository", s.StorageType).Msg("")
+
+	var repoFlush repository.Metric
+	var flushStoragePath string
+	if s.StorageType != StorageTypeFile {
+		if s.StoragePath != nil {
+			flushStoragePath = *s.StoragePath
+		} else {
+			flushStoragePath = "./metrics.json"
+		}
+		repoFlush = repository.NewFileRepository(flushStoragePath, true)
+	}
 
 	e := echo.New()
 
@@ -116,18 +213,16 @@ func (s Server) Run(cmdArgs []string) error {
 	}))
 
 	e.Use(handlers.GzipWithConfig(handlers.GzipConfig{
-		Skipper: func(c echo.Context) bool {
-			/* mediaType := handlers.GetMediaType(c.Request())
-			return !(mediaType == echo.MIMEApplicationJSON || mediaType == echo.MIMETextHTML) */
-			return false
-		},
-		MinLength: 10,
+		MinLength: 1,
 	}))
 
 	hu := handlers.NewMetricUpdateHandler(repo)
 	updates := e.Group("/update")
 	updates.GET("*", hu.HandleMetricUpdate)
 	updates.POST("*", hu.HandleMetricUpdate)
+
+	batchUpdates := e.Group("/updates")
+	batchUpdates.POST("*", hu.HandleMetricsUpdate)
 
 	hl := handlers.NewMetricListHandler(repo)
 	lists := e.Group("/")
@@ -138,25 +233,55 @@ func (s Server) Run(cmdArgs []string) error {
 	values.GET("*", hg.HandleMetricGet)
 	values.POST("*", hg.HandleMetricGet)
 
-	log.Debug().Msg(fmt.Sprintf("LoadFromStorageOnStart=%t", *s.LoadFromStorageOnStart))
-	if s.LoadFromStorageOnStart != nil && *s.LoadFromStorageOnStart {
-		handlers.Load(repo, s.StoragePath)
+	var hp handlers.DBPingHandler
+	if s.StorageType == StorageTypeDB {
+		hp = handlers.NewDBPingHandler(repo.(*repository.MetricRepositoryDB))
+	} else {
+		hp = handlers.NewDBPingHandler(nil)
+	}
+	ping := e.Group("/ping")
+	ping.GET("*", hp.HandlePing)
+
+	log.Debug().Bool("LoadFromStorageOnStart", *s.LoadFromStorageOnStart).Msg("")
+	if s.StorageType != StorageTypeFile && s.LoadFromStorageOnStart != nil && *s.LoadFromStorageOnStart {
+		handlers.Load(repo, repoFlush)
 	}
 
-	if s.StoreInterval != nil {
+	if s.StorageType != StorageTypeFile && s.StoreInterval != nil {
 		var flushTimer = time.NewTicker(time.Second * time.Duration(*s.StoreInterval))
-		go FlushEvent(flushTimer, repo, s.StoragePath)
+		go FlushEvent(flushTimer, repo, repoFlush)
 	}
 
-	if err := e.Start(s.Host); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Err(err).Msg("failed to start server")
+	go func() {
+		if err := e.Start(s.Host); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Err(err).Msg("failed to start server")
+		}
+	}()
+
+	select {
+	case <-serverReady:
+		fmt.Println("ready")
+	case <-ctx.Done():
+		log.Info().Msg("shutdown started...")
+		ctxt, f := context.WithTimeout(context.Background(), 20*time.Second)
+		defer f()
+
+		e.Shutdown(ctxt)
+		log.Info().Msg("http server shutdown complete")
+
+		//repo.Close() wait infinite as described in docs
+		dbCtxF()
+		time.Sleep(3 * time.Second)
+
+		log.Info().Msg("repository shutdown complete")
+		stop()
 	}
 
 	return err
 }
 
-func FlushEvent(tick *time.Ticker, repo repository.Repository, filePath string) {
+func FlushEvent(tick *time.Ticker, repo repository.Metric, repoFlush repository.Metric) {
 	for range tick.C {
-		handlers.Flush(repo, filePath)
+		handlers.Flush(repo, repoFlush)
 	}
 }

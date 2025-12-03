@@ -32,7 +32,7 @@ func TestIntegration(t *testing.T) {
 	var httpc = http.Client{Timeout: time.Duration(1) * time.Second}
 	var metrics = ""
 	resp, err := httpc.Get(fmt.Sprintf("http://%s", host))
-	log.Debug().Msg(fmt.Sprintf("status=%d, len=%d, error=%+v", resp.StatusCode, resp.ContentLength, err))
+	log.Debug().Int("status", resp.StatusCode).Int64("len", resp.ContentLength).Err(err).Msg("")
 	if err == nil && resp != nil {
 		b, err := io.ReadAll(resp.Body)
 		resp.Body.Close()

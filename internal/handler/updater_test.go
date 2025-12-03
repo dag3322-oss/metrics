@@ -3,9 +3,11 @@ package handler
 import (
 	"net/http"
 	"testing"
+
+	repository "github.com/dag3322-oss/metrics/internal/repository"
 )
 
-var hu MetricUpdateHandler = NewMetricUpdateHandler(repo)
+var hu MetricUpdateHandler = NewMetricUpdateHandler(repository.NewMemRepository())
 
 func TestUpdater(t *testing.T) {
 	var zeroStatus = 0
