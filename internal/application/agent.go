@@ -35,6 +35,7 @@ type Agent struct {
 	PollInterval   *int64
 	repo           repository.Metric
 	httpClient     *helper.RetryableClient
+	HashKey        *string
 }
 
 func (a *Agent) setParams(cmdArgs []string) error {
@@ -46,6 +47,7 @@ func (a *Agent) setParams(cmdArgs []string) error {
 	var flagHost = flagSet.String("a", "localhost:8080", "host:port")
 	var flagReportInterval = flagSet.Int64("r", 10, "send interval(seconds)")
 	var flagPollInterval = flagSet.Int64("p", 2, "poll interval(seconds)")
+	var flagHashKey = flagSet.String("k", "", "hash key")
 	if len(cmdArgs) > 0 {
 		flagSet.Parse(cmdArgs)
 	}
@@ -83,6 +85,20 @@ func (a *Agent) setParams(cmdArgs []string) error {
 		}
 	}
 
+	if a.HashKey == nil {
+		hk, exists := os.LookupEnv("KEY")
+		if exists {
+			a.HashKey = &hk
+		} else {
+			flagSet.Visit(func(f *flag.Flag) {
+				if f.Name == "k" {
+					a.HashKey = flagHashKey
+					return
+				}
+			})
+		}
+	}
+
 	return nil
 }
 
@@ -98,7 +114,7 @@ func (a *Agent) Run(cmdArgs []string) error {
 
 	a.repo = repository.NewMemRepository()
 
-	a.httpClient = helper.NewRetryableClient()
+	a.httpClient = helper.NewRetryableClient(a.HashKey)
 
 	Collect(time.Now(), a.repo)
 	var collectTimer = time.NewTicker(time.Second * time.Duration(*a.PollInterval))

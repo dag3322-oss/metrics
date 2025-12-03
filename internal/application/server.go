@@ -38,6 +38,7 @@ type Server struct {
 	LoadFromStorageOnStart *bool
 	DBConnectionString     *string
 	StorageType            StorageTypeType
+	HashKey                *string
 }
 
 func (s *Server) setParams(cmdArgs []string) error {
@@ -56,6 +57,7 @@ func (s *Server) setParams(cmdArgs []string) error {
 	var flagStoragePath = flagSet.String("f", "", "metrics storage path")
 	var flagLoadFromStorageOnStart = flagSet.Bool("r", false, "load metrics from storage on start")
 	var flagDBConnectionString = flagSet.String("d", "", "database connection string")
+	var flagHashKey = flagSet.String("k", "", "hash key")
 
 	if len(cmdArgs) > 0 {
 		flagSet.Parse(cmdArgs)
@@ -141,6 +143,20 @@ func (s *Server) setParams(cmdArgs []string) error {
 		s.StorageType = StorageTypeMem
 	}
 
+	if s.HashKey == nil {
+		hk, exists := os.LookupEnv("KEY")
+		if exists {
+			s.HashKey = &hk
+		} else {
+			flagSet.Visit(func(f *flag.Flag) {
+				if f.Name == "k" {
+					s.HashKey = flagHashKey
+					return
+				}
+			})
+		}
+	}
+
 	return err
 }
 
@@ -185,7 +201,11 @@ func (s Server) Run(cmdArgs []string) error {
 		repoFlush = repository.NewFileRepository(flushStoragePath, true)
 	}
 
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 	e := echo.New()
+
+	e.Use(handlers.HashCheckWithConfig(handlers.HashCheckConfig{Key: s.HashKey}))
 
 	e.Use(middleware.Decompress())
 
@@ -215,6 +235,8 @@ func (s Server) Run(cmdArgs []string) error {
 	e.Use(handlers.GzipWithConfig(handlers.GzipConfig{
 		MinLength: 1,
 	}))
+
+	e.Use(handlers.HashWriteWithConfig(handlers.HashWriteConfig{Key: s.HashKey}))
 
 	hu := handlers.NewMetricUpdateHandler(repo)
 	updates := e.Group("/update")

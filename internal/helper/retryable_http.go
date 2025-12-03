@@ -1,6 +1,10 @@
 package helper
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/base64"
+	"io"
 	"net"
 	"net/http"
 	"time"
@@ -8,18 +12,36 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func NewRetryableClient() *RetryableClient {
+func NewRetryableClient(hashKey *string) *RetryableClient {
 	c := new(RetryableClient)
+	c.hashKey = hashKey
 	c.client = &http.Client{}
 	c.client.Timeout = 30 * time.Second
 	return c
 }
 
 type RetryableClient struct {
-	client *http.Client
+	client  *http.Client
+	hashKey *string
 }
 
 func (c RetryableClient) Do(req *http.Request) (resp *http.Response, err error) {
+	if c.hashKey != nil {
+		r := req.Body
+		defer r.Close()
+		if r != nil {
+			b, err := io.ReadAll(r)
+			if err != nil {
+				return nil, err
+			}
+			bodyHash := sha256.Sum256(append(b[:], []byte(*c.hashKey)...))
+			s := base64.StdEncoding.EncodeToString(bodyHash[:])
+			log.Debug().Str("header", "\""+s+"\"").Msg("sha256")
+			req.Header.Add(HashHeaderName, s)
+			req.Body = io.NopCloser(bytes.NewReader(b))
+		}
+	}
+
 	i := 0
 	for {
 		time.Sleep(time.Duration(i) * time.Second)
